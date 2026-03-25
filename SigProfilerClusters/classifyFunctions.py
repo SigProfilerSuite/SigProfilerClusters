@@ -299,7 +299,7 @@ def pullCCF(project, project_path, correction=True):
             print("\t".join([x for x in lines]), file=out)
 
 
-def pullVaf(project, project_path, variant_caller="standard", correction=True):
+def pullVaf(project, project_path, variant_caller="standard", tumor_vaf_column=10, vaf_field = "AF",correction=True):
     """
     Collects the VAFs from the original mutation files. Assumes that these are provided in the same
     format as Sanger or TCGA.
@@ -311,6 +311,9 @@ def pullVaf(project, project_path, variant_caller="standard", correction=True):
                                 -> caveman: If your VAF is recorded in the 11th column of your VCF as the last number of the colon delimited values, set variant_caller="caveman".
                                 -> standard: If your VAF is recorded in the 8th or 10th column of your VCF as VAF=xx or AF=xx, set variant_caller="standard".
                                 -> mutect2: If your VAF is recorded in the 10th or 11th column of your VCF as AF=xx, set variant_caller="mutect2".
+                                -> custom: Configure tumor_vaf_column as 0 based index (Default = 10) and the vaf_field tag (Default = AF)
+            tumor_vaf_column -> Activated when variant_caller = "custom". 0 based index of the column in VCF containing VAF (Default 10)
+            vaf_field       -> Activated when variant_caller = "custom". Set the VAF tag (Default AF)
               correction	->	optional parameter to perform a genome-wide mutational density correction (boolean; default=False)
 
     Returns:
@@ -340,11 +343,11 @@ def pullVaf(project, project_path, variant_caller="standard", correction=True):
     vcf_files = [x for x in os.listdir(vcf_path) if x != ".DS_Store"]
 
     # Dictionary for variant caller mapping
-    variant_type_dict = {
-        "caveman": "caveman",
-        "standard": "standard",
-        "mutect2": "mutect2",
-    }
+    # variant_type_dict = {
+    #     "caveman": "caveman",
+    #     "standard": "standard",
+    #     "mutect2": "mutect2",
+    # }
     ###extracting VAF info
     if variant_caller == "standard":
         vafs = {}
@@ -431,12 +434,76 @@ def pullVaf(project, project_path, variant_caller="standard", correction=True):
                         break  # Stop after finding the header
 
                 # Check if TUMOR column exists
+
+                print(header)
                 if "TUMOR" not in header:
                     print(f"TUMOR column not found in {vcfFile}. Skipping...")
                     continue
 
                 # Get the index of the TUMOR column
                 tumor_index = header.index("TUMOR")
+
+                # Process the data rows
+                for line in f:
+                    if line.startswith("#"):
+                        continue
+
+                    try:
+                        fields = line.strip().split("\t")
+                        chrom = fields[0]
+
+                        # Normalize chromosome naming
+                        if chrom.lower().startswith("chr"):
+                            chrom = chrom[3:]
+
+                        pos = fields[1]
+                        ref = fields[3]
+                        alt = fields[4]
+
+                        # Extract FORMAT field and TUMOR data
+                        fmt = fields[8].split(":")
+                        tumor_data = fields[tumor_index].split(":")
+
+                        # Get the VAF value
+                        vaf_index = fmt.index(field)
+                        vaf = float(tumor_data[vaf_index])
+
+                        # Create key for the variant
+                        if len(ref) == len(alt) and len(ref) > 1:
+                            for i in range(len(ref)):
+                                keyLine = f"{chrom}:{int(pos) + i}:{ref[i]}:{alt[i]}"
+                                vafs[sample][keyLine] = vaf
+                        else:
+                            keyLine = f"{chrom}:{pos}:{ref}:{alt}"
+                            vafs[sample][keyLine] = vaf
+
+                    except (ValueError, IndexError) as e:
+                        print(f"Error processing line in {vcfFile}: {line}\n{e}")
+                        continue
+    elif variant_caller == "custom":
+        field = vaf_field  # The VAF field in the FORMAT column
+        vafs = {}
+
+        for vcfFile in vcf_files:
+            sample = vcfFile.split(".")[0]
+            vafs[sample] = {}
+            header = []
+
+            with open(os.path.join(vcf_path, vcfFile)) as f:
+                for line in f:
+                    # Identify the header line with column names
+                    if line.startswith("#") and not line.startswith("##"):
+                        header = line.strip().split("\t")
+                        break  # Stop after finding the header
+
+                # Check if TUMOR column exists
+
+                if len(header) <= tumor_vaf_column:
+                    print(f"Tumor column {tumor_vaf_column} not found in header of {vcfFile}. Skipping...")
+                    continue
+
+                # Get the index of the TUMOR column
+                tumor_index = tumor_vaf_column
 
                 # Process the data rows
                 for line in f:
