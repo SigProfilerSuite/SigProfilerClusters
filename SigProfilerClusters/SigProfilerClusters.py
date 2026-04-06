@@ -639,6 +639,8 @@ def analysis(
     max_cpu=None,
     subClassify=False,
     variant_caller="standard",
+    tumor_vaf_column = 10, 
+    vaf_field = "AF",
     includedVAFs=True,
     includedCCFs=False,
     windowSize=1000000,
@@ -674,7 +676,9 @@ def analysis(
                                 -> caveman: If your VAF is recorded in the 11th column of your VCF as the last number of the colon delimited values, set variant_caller="caveman".
                                 -> standard: If your VAF is recorded in the 8th or 10th column of your VCF as VAF=xx or AF=xx, set variant_caller="standard".
                                 -> mutect2: If your VAF is recorded in the 10th or 11th column of your VCF as AF=xx, set variant_caller="mutect2".
-
+                                -> custom: Configure tumor_vaf_column as 0 based index (Default = 10) and the vaf_field tag (Default = AF)
+            tumor_vaf_column -> Activated when variant_caller = "custom". 0 based index of the column in VCF containing VAF (Default 10)
+            vaf_field       -> Activated when variant_caller = "custom". Set the VAF tag (Default AF)
 
                includedVAFs ->  optional parameter that informs the tool of the inclusion of VAFs in the dataset (boolean; default=True)
                includedCCFs ->  optional parameter that informs the tool of the inclusion of cancer cell fractions in the dataset (boolean; default=True)
@@ -1348,7 +1352,7 @@ def analysis(
             print("Beginning subclassification of clustered mutations...", end="")
             if includedVAFs:
                 classifyFunctions.pullVaf(
-                    project, input_path, variant_caller, correction
+                    project, input_path, variant_caller, tumor_vaf_column, vaf_field, correction
                 )
                 sys.stderr.close()
                 sys.stderr = open(error_file, "a")

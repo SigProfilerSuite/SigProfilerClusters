@@ -17,7 +17,7 @@ def readme():
     # 	return(f.read())
 
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 
 
 def write_version_py(filename="SigProfilerClusters/version.py"):
@@ -66,5 +66,10 @@ setup(
         "seaborn>=0.13.0",
     ],
     include_package_data=True,
+    entry_points={
+        "console_scripts": [
+            "SigProfilerClusters=SigProfilerClusters.sigprofilerclusters_cli:main_function",
+        ],
+    },
     zip_safe=False,
 )
