@@ -1,5 +1,7 @@
 # SigProfilerClusters
 
+![Logo](assets/images/SigProfilerClusters.png)
+
 ----------
 
 **SigProfilerClusters** is a Python framework for analyzing the inter-mutational distances (IMD) between SNV-SNV and INDEL-INDEL mutations. The tool separates mutations into clustered and non-clustered groups on a sample-dependent basis, and subclassifies all SNVs into one of four categories of clustered event: i) doublet base substitutions (DBS); ii) multi-base substitutions (MBS); iii) omikli; and iv) kataegis. Indels are identified as clustered or non-clustered but are not further subclassified.
