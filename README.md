@@ -3,7 +3,7 @@
 
 # SigProfilerClusters
 
-![Logo](SigProfilerClusters.png)
+![Logo](docs/assets/images/SigProfilerClusters.png)
 Tool for analyzing the inter-mutational distances between SNV-SNV and INDEL-INDEL mutations. Tool separates mutations into clustered and non-clustered groups on a sample-dependent basis and subclassifies all SNVs into a set category of clustered event: i) DBS; ii) MBS; iii) omikli; and iv) kataegis. Indels are not subclassifed. 
 
 This tool was previously under the project name of SigProfilerHotSpots, but has been renamed to SigProfilerClusters. For all instructions below, SigProfilerClusters may be interchanged with SigProfilerHotSpots if the older version of the tools is being used.
