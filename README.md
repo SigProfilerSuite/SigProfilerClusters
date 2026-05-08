@@ -132,7 +132,9 @@ Two examples are provided under examples/. These directories include all expecte
 
 CITATIONS
 
-Erik N Bergstrom, Mousumy Kundu, Noura Tbeileh, Ludmil B Alexandrov. bioRxiv 2022.02.11.480117; doi: https://doi.org/10.1101/2022.02.11.480117
+Erik N Bergstrom, Mousumy Kundu, Noura Tbeileh, Ludmil B Alexandrov. Examining clustered somatic mutations with SigProfilerClusters. Bioinformatics. 2022;38(13):3470–3473. https://doi.org/10.1093/bioinformatics/btac335
+
+Bergstrom EN, Luebeck J, Petljak M, et al. Mapping clustered mutations in cancer reveals APOBEC3 mutagenesis of ecDNA. Nature. 2022;602:510–517. https://doi.org/10.1038/s41586-022-04398-6
 
 COPYRIGHT
 
