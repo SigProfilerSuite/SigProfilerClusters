@@ -50,4 +50,4 @@ Bergstrom EN, Luebeck J, Petljak M, et al. Mapping clustered mutations in cancer
 
 ## Contact
 
-For questions, support requests, or bug reports, please contact the development team via GitHub [issues](https://github.com/SigProfilerSuite/SigProfilerClusters/issues) or by email at [ebergstr@health.ucsd.edu](mailto:ebergstr@health.ucsd.edu) or [mkundu@health.ucsd.edu](mailto:mkundu@health.ucsd.edu).
+For questions, support requests, or bug reports, please contact the SigProfilerSuite team via GitHub [issues](https://github.com/SigProfilerSuite/SigProfilerClusters/issues) or by email at [contact@sigprofilersuite.org](mailto:contact@sigprofilersuite.org).
