@@ -1029,7 +1029,7 @@ def analysis(
         original_samples_length = os.listdir(original_samples)
         if processors > len(original_samples_length):
             max_seed = len(original_samples_length)
-        pool = mp.Pool(max_seed)
+        pool = mp.get_context("fork").Pool(max_seed)
         # pool_break = len(simulations)/max_seed
         samples_parallel = [[] for i in range(max_seed)]
         pool_bin = 0
@@ -1063,7 +1063,7 @@ def analysis(
         # Parallelize and calculate distances for the simulated samples
         if processors > len(simulations):
             max_seed = len(simulations)
-        pool = mp.Pool(max_seed)
+        pool = mp.get_context("fork").Pool(max_seed)
         # sim_break = len(simulations)/max_seed
         simulations_parallel = [[] for i in range(max_seed)]
         sim_bin = 0

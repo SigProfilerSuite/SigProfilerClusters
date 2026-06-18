@@ -1713,7 +1713,7 @@ def findClustersOfClusters(
         max_seed = len(subclasses)
     else:
         max_seed = processors
-    pool = mp.Pool(max_seed)
+    pool = mp.get_context("fork").Pool(max_seed)
 
     subclasses_parallel = [[] for i in range(max_seed)]
     subclass_bin = 0
@@ -2620,7 +2620,7 @@ def findClustersOfClusters_noVAF(
         max_seed = len(subclasses)
     else:
         max_seed = processors
-    pool = mp.Pool(max_seed)
+    pool = mp.get_context("fork").Pool(max_seed)
 
     subclasses_parallel = [[] for i in range(max_seed)]
     subclass_bin = 0
