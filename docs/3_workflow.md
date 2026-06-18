@@ -46,4 +46,4 @@ After thresholding and correction, mutations are assigned to one of the followin
 
 Indels are classified as clustered or non-clustered but are not further subclassified into the categories above.
 
-  [1]: https://osf.io/usxjz/wiki/home/
+  [1]: https://sigprofilersuite.github.io/SigProfilerSimulator/
