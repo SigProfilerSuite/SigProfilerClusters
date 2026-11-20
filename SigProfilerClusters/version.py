@@ -1,7 +1,7 @@
 
 # THIS FILE IS GENERATED FROM SIGPROFILECLUSTERS SETUP.PY
-short_version = '1.2.3'
-version = '1.2.3'
+short_version = '1.2.4'
+version = '1.2.4'
 Update = 'v1.2.2: Updates to variant_caller parameter and plotting improvements'
 	
 	

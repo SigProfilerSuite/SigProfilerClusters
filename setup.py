@@ -17,7 +17,7 @@ def readme():
     # 	return(f.read())
 
 
-VERSION = "1.2.3"
+VERSION = "1.2.4"
 
 
 def write_version_py(filename="SigProfilerClusters/version.py"):
