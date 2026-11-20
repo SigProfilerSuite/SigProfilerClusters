@@ -12,6 +12,44 @@ import multiprocessing as mp
 import sys
 
 
+def get_input_vcf_path(project_path):
+    """
+    Return the directory (with trailing "/") that holds the original input files of a project.
+
+    Older SigProfilerMatrixGenerator versions copy the input files directly into
+    "<project_path>/input/". Newer versions copy them into a per-run subfolder,
+    "<project_path>/input/<project>_<uuid>/". This returns "input/" when it contains
+    files and otherwise the most recently modified subfolder that contains files.
+
+    Parameters:
+            project_path	->	the directory for the given project (string)
+
+    Returns:
+            path to the directory with the input files (string)
+    """
+    base = os.path.join(project_path, "input") + os.sep
+
+    def _files(path):
+        return [
+            x
+            for x in os.listdir(path)
+            if x != ".DS_Store" and os.path.isfile(os.path.join(path, x))
+        ]
+
+    if _files(base):
+        return base
+
+    subdirs = [
+        os.path.join(base, x)
+        for x in os.listdir(base)
+        if os.path.isdir(os.path.join(base, x))
+    ]
+    for subdir in sorted(subdirs, key=os.path.getmtime, reverse=True):
+        if _files(subdir):
+            return subdir + os.sep
+    return base
+
+
 def processivitySubclassification(event, out2Y, out2K, out2S, out2N):
     """
     Separates Class 2 kataeigs events into different subclassifications of processivity.
@@ -211,7 +249,7 @@ def pullCCF(project, project_path, correction=True):
     path_suffix = ""
     if correction:
         path_suffix += "_corrected"
-    vcf_path = project_path + "input/"
+    vcf_path = get_input_vcf_path(project_path)
     clusteredMutsPath = (
         project_path + "output/vcf_files" + path_suffix + "/" + project + "_clustered/"
     )
@@ -226,7 +264,11 @@ def pullCCF(project, project_path, correction=True):
         + project
         + "_clustered.txt"
     )
-    vcf_files = [x for x in os.listdir(vcf_path) if x != ".DS_Store"]
+    vcf_files = [
+        x
+        for x in os.listdir(vcf_path)
+        if x != ".DS_Store" and os.path.isfile(os.path.join(vcf_path, x))
+    ]
 
     ccfs = {}
     for vcfFile in vcf_files:
@@ -325,7 +367,7 @@ def pullVaf(project, project_path, variant_caller="standard", tumor_vaf_column=1
     path_suffix = ""
     if correction:
         path_suffix += "_corrected"
-    vcf_path = project_path + "input/"
+    vcf_path = get_input_vcf_path(project_path)
     clusteredMutsPath = (
         project_path + "output/vcf_files" + path_suffix + "/" + project + "_clustered/"
     )
@@ -340,7 +382,11 @@ def pullVaf(project, project_path, variant_caller="standard", tumor_vaf_column=1
         + project
         + "_clustered.txt"
     )
-    vcf_files = [x for x in os.listdir(vcf_path) if x != ".DS_Store"]
+    vcf_files = [
+        x
+        for x in os.listdir(vcf_path)
+        if x != ".DS_Store" and os.path.isfile(os.path.join(vcf_path, x))
+    ]
 
     # Dictionary for variant caller mapping
     # variant_type_dict = {
@@ -1713,7 +1759,7 @@ def findClustersOfClusters(
         max_seed = len(subclasses)
     else:
         max_seed = processors
-    pool = mp.Pool(max_seed)
+    pool = mp.get_context("fork").Pool(max_seed)
 
     subclasses_parallel = [[] for i in range(max_seed)]
     subclass_bin = 0
@@ -2620,7 +2666,7 @@ def findClustersOfClusters_noVAF(
         max_seed = len(subclasses)
     else:
         max_seed = processors
-    pool = mp.Pool(max_seed)
+    pool = mp.get_context("fork").Pool(max_seed)
 
     subclasses_parallel = [[] for i in range(max_seed)]
     subclass_bin = 0
