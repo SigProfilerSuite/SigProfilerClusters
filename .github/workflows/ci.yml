@@ -41,9 +41,10 @@ jobs:
       uses: actions/cache@v5
       with:
         path: ${{ github.workspace }}/src/
-        key: ${{ runner.os }}-src-grch37
-        restore-keys: |
-          ${{ runner.os }}-src-
+        # Bump the suffix whenever the GRCh37.tar.gz on the FTP is replaced
+        # (it was replaced by the corrected genome on 2026-10-01). A stale
+        # tarball fails SigProfilerMatrixGenerator >= 1.6.0 checksum validation.
+        key: ${{ runner.os }}-src-grch37-corrected-v1
     
     - name: Download GRCh37.tar.gz if not present
       run: |
