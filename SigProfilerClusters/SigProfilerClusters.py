@@ -1063,12 +1063,14 @@ def analysis(
         else:
             context_ref = "SNV"
 
-        original_vcf_path = ref_dir + "input/"
-        vcf_files = os.listdir(original_vcf_path)
+        original_vcf_path = classifyFunctions.get_input_vcf_path(ref_dir)
         vcf_path = original_vcf_path
-
-        if ".DS_Store" in vcf_files:  # Remove hidden macOS files
-            vcf_files.remove(".DS_Store")
+        # Ignore hidden macOS files and subfolders
+        vcf_files = [
+            x
+            for x in os.listdir(original_vcf_path)
+            if x != ".DS_Store" and os.path.isfile(os.path.join(original_vcf_path, x))
+        ]
         file_name = vcf_files[0].split(".")
         file_extension = file_name[-1]
 
