@@ -190,6 +190,48 @@ class TestVafDeclassification:
         assert _positions(clustered, "class3") == [1000, 1200]
 
 
+class TestVafResegmentation:
+    """An event that mixes two VAF populations is split into one event per population,
+    and each part is classified on its own."""
+
+    def _groups(self, clustered, name):
+        return [cols[GROUP_COL] for cols in _entries(clustered, name)]
+
+    def test_two_adjacent_pairs_become_two_dbs(self, tmp_path):
+        rows = [_vrow(1000, 0.3), _vrow(1001, 0.3), _vrow(1002, 0.7), _vrow(1003, 0.7)]
+        clustered = _run(tmp_path, rows)
+        assert _populated(clustered) == ["class1", "class1a"]
+        assert _positions(clustered, "class1a") == [1000, 1001, 1002, 1003]
+        assert len(set(self._groups(clustered, "class1a"))) == 2
+
+    def test_two_adjacent_runs_become_two_mbs(self, tmp_path):
+        rows = [_vrow(1000 + i, 0.3) for i in range(3)] + [_vrow(1003 + i, 0.7) for i in range(3)]
+        clustered = _run(tmp_path, rows)
+        assert _populated(clustered) == ["class1", "class1b"]
+        assert len(_entries(clustered, "class1b")) == 6
+        assert len(set(self._groups(clustered, "class1b"))) == 2
+
+    def test_two_dense_parts_become_two_class2_events(self, tmp_path):
+        rows = [_vrow(1000 + 50 * i, 0.3) for i in range(4)]
+        rows += [_vrow(1200 + 50 * i, 0.7) for i in range(4)]
+        clustered = _run(tmp_path, rows)
+        assert len(_entries(clustered, "class2")) == 8
+        assert len(set(self._groups(clustered, "class2"))) == 2
+
+    def test_each_part_gets_its_own_processivity_subclass(self, tmp_path):
+        rows = [_vrow(1000 + 50 * i, 0.3, ref="C") for i in range(4)]
+        rows += [_vrow(1200 + 50 * i, 0.7, ref=ref) for i, ref in enumerate("TGTG")]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class2Y") == [1000, 1050, 1100, 1150]
+        assert _positions(clustered, "class2K") == [1200, 1250, 1300, 1350]
+
+    def test_parts_can_belong_to_different_classes(self, tmp_path):
+        rows = [_vrow(1000, 0.3), _vrow(1001, 0.3), _vrow(1050, 0.7), _vrow(1100, 0.7)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class1a") == [1000, 1001]
+        assert _positions(clustered, "class1c") == [1050, 1100]
+
+
 # ─── grouping of mutations into events ───────────────────────
 
 
