@@ -78,7 +78,7 @@ $ SigProfilerClusters analysis project genome contexts simContext input_path
 | `vaf_field` | String | Only with `variant_caller="custom"`: tag of the VAF inside the FORMAT/sample columns. Default: `"AF"`. Available in the Python API only (the command line does not expose it) |
 | `windowSize` | Integer | Window size (in bp) for calculating mutation density in rainfall plots. Default: `1000000` |
 | `correction` | Boolean | Apply genome-wide mutational density correction to the IMD threshold. Default: `True` |
-| `probability` | Boolean | Calculate the probability of observing each clustered event within its local genomic region. Results are appended as an extra column in the output VCF files under `[project_path]/output/clustered/`. Default: `False` |
+| `probability` | Boolean | **Experimental.** Adds an `EVENT_PROBABILITY` score for each clustered event, based on the density of simulated mutations in its genomic window. The score is a product of density estimates, not a statistical probability, and the model is under review. For each sample a `<sample>_prob.vcf` is written next to the original `<sample>.vcf`, which is kept. Reproducible: the simulations used are chosen with a fixed seed. Files are under `[project_path]/output/clustered/`. Default: `False` |
 
 ## VAF Formats ##
 

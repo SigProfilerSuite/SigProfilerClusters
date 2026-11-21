@@ -2,9 +2,11 @@
 event, estimated from the density of simulated mutations in the same genomic window.
 Inputs are synthetic simulation IMD files and clustered per-sample VCFs built with
 tmp_path. No genome reference required.
-Tests marked xfail record behavior that looks wrong and is planned for a later fix.
+The score is experimental (audit finding 11): these tests cover robustness and reproducibility.
 Run with: pytest tests/test_event_probability.py -v
 """
+
+import random
 
 import matplotlib
 
@@ -63,10 +65,11 @@ def setup(tmp_path):
 
 
 class TestEventProbability:
-    def test_a_probability_file_replaces_the_clustered_vcf(self, setup):
+    def test_a_probability_file_is_written_next_to_the_clustered_vcf(self, setup):
+        # audit finding 11: the original used to be deleted
         root, simulations, folder = setup
         _run(root, simulations)
-        assert sorted(p.name for p in folder.iterdir()) == ["S1_prob.vcf"]
+        assert sorted(p.name for p in folder.iterdir()) == ["S1.vcf", "S1_prob.vcf"]
 
     def test_header_has_the_probability_column(self, setup):
         root, simulations, folder = setup
@@ -133,14 +136,53 @@ class TestEventProbability:
         _run(tmp_path, simulations, k=3)
         assert (folder / "S1_prob.vcf").exists()
 
-    @pytest.mark.xfail(
-        reason="when every chromosome name is numeric pandas reads them as integers, so "
-        "the distributions are keyed by int but looked up by str(chrom): KeyError",
-        raises=KeyError,
-        strict=True,
-    )
     def test_numeric_chromosomes_only(self, tmp_path):
         simulations = _write_simulations(tmp_path, chroms=("1",))
         folder = _write_clustered(tmp_path, [_event([1000, 1010], 1)])
         _run(tmp_path, simulations)
         assert (folder / "S1_prob.vcf").exists()
+
+
+# ─── audit finding 11: reproducible, non-destructive and honest about the score ──
+
+class TestFinding11:
+    def test_the_original_clustered_vcf_is_kept(self, setup):
+        root, simulations, folder = setup
+        original = (folder / "S1.vcf").read_text()
+        _run(root, simulations)
+        assert (folder / "S1.vcf").read_text() == original
+        assert (folder / "S1_prob.vcf").exists()
+
+    def test_the_result_does_not_depend_on_the_global_random_state(self, tmp_path):
+        outputs = []
+        for run, state in enumerate((1, 2)):
+            root = tmp_path / f"run{run}"
+            root.mkdir()
+            simulations = _write_simulations(root, n_files=12)
+            folder = _write_clustered(root, [_event([1000, 1010], 1), _event([2000, 2500], 2)])
+            random.seed(state)
+            _run(root, simulations)
+            outputs.append((folder / "S1_prob.vcf").read_text())
+        assert outputs[0] == outputs[1]
+
+    def test_a_warning_says_that_the_value_is_experimental(self, setup):
+        root, simulations, _ = setup
+        with pytest.warns(UserWarning, match="experimental"):
+            _run(root, simulations)
+
+    def test_events_are_written_in_a_fixed_order(self, tmp_path):
+        simulations = _write_simulations(tmp_path)
+        events = [_event([2000, 2500], 10), _event([1000, 1010], 2), _event([3000, 3400], 1, chrom="X")]
+        folder = _write_clustered(tmp_path, events)
+        _run(tmp_path, simulations)
+        rows = _read(folder / "S1_prob.vcf")[1:]
+        assert [(r[0], r[7].rsplit("groupNumber", 1)[1]) for r in rows[::2]] == [("1", "2"), ("1", "10"), ("X", "1")]
+
+    def test_simulations_are_chosen_with_a_fixed_seed(self, tmp_path):
+        simulations = _write_simulations(tmp_path, n_files=15)
+        folder = _write_clustered(tmp_path, [_event([1000, 1010], 1)])
+        _run(tmp_path, simulations)
+        first = (folder / "S1_prob.vcf").read_text()
+        (folder / "S1_prob.vcf").unlink()
+        _run(tmp_path, simulations)
+        assert (folder / "S1_prob.vcf").read_text() == first

@@ -26,9 +26,14 @@ from . import plottingFunctions
 from SigProfilerMatrixGenerator.scripts import MutationMatrixGenerator as matRef
 from . import convertToVCF
 import random
+import warnings
 import pandas as pd
 import bisect
 import seaborn as sns
+
+
+# Seed used to choose the simulations of eventProbability (audit finding 11)
+EVENT_PROBABILITY_SEED = 0
 
 
 def distance_multiple_files_sims(
@@ -504,13 +509,23 @@ def distance_one_file(
 def eventProbability(
     project, input_path, simulation_path, output_path_original, windowSize, k=10
 ):
+    # Audit finding 11: EVENT_PROBABILITY is a product of KDE density heights, not a probability.
+    warnings.warn(
+        "EVENT_PROBABILITY is an experimental score (a product of kernel density estimates "
+        "of the simulated mutations), not a probability; the model is under review.",
+        UserWarning,
+        stacklevel=2,
+    )
     windowSize *= 10
     subclasses = ["DBS", "MBS", "omikli", "kataegis", "other"]
 
-    samples = [x for x in os.listdir(simulation_path) if x[0] != "."]
+    samples = sorted(x for x in os.listdir(simulation_path) if x[0] != ".")
     for sample in samples:
         samplePath = os.path.join(simulation_path, sample)
-        simFiles = random.sample([x for x in os.listdir(samplePath) if x[0] != "."], k)
+        # A fixed seed over the sorted file names makes the choice of simulations reproducible
+        simFiles = random.Random(EVENT_PROBABILITY_SEED).sample(
+            sorted(x for x in os.listdir(samplePath) if x[0] != "."), k
+        )
         simIMDs = {}
 
         for sim in simFiles:
@@ -519,6 +534,7 @@ def eventProbability(
                 sep="\t",
                 header=None,
                 names=["IMD", "sample", "chrom", "pos", "ref", "alt", "plotIMD"],
+                dtype={"chrom": str},  # all-numeric names would be read as integers
             )
             chroms = list(set(muts["chrom"]))
             for chrom in chroms:
@@ -603,11 +619,14 @@ def eventProbability(
                     x.split("groupNumber")[1] for x in clusteredMuts["INFO"]
                 ]
 
-                for chrom in set(clusteredMuts["#CHROM"]):
+                for chrom in sorted(set(clusteredMuts["#CHROM"]), key=str):
                     currentClusteredMuts = clusteredMuts[
                         clusteredMuts["#CHROM"] == chrom
                     ]
-                    for event in set(currentClusteredMuts["EVENTS"]):
+                    for event in sorted(
+                        set(currentClusteredMuts["EVENTS"]),
+                        key=lambda e: (int(e) if str(e).strip().isdigit() else float("inf"), str(e)),
+                    ):
                         eventMuts = currentClusteredMuts[
                             currentClusteredMuts["EVENTS"] == event
                         ]
@@ -629,7 +648,6 @@ def eventProbability(
                         for i, x in eventMuts.iterrows():
                             x = list(x)[:-1] + [probs]
                             print("\t".join([str(y) for y in x]), file=out)
-                os.remove(subclassPath)
                 out.close()
 
 
