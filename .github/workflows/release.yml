@@ -101,7 +101,6 @@ jobs:
 
     permissions:
       contents: write
-      pull-requests: write
 
     steps:
       - name: Checkout repo
@@ -109,23 +108,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Merge master into a sync branch off dev
+      # Fast-forwards dev to master when dev has not moved since the release PR
+      # (dev == master); otherwise creates one merge commit (dev 1 ahead).
+      # Requires dev to accept direct pushes from github-actions.
+      - name: Sync master into dev
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git fetch origin master dev
-          git checkout -b sync/master-into-dev-${{ github.run_id }} origin/dev
+          git checkout -B dev origin/dev
           git merge origin/master --no-edit
-
-      - name: Push sync branch
-        run: git push origin sync/master-into-dev-${{ github.run_id }}
-
-      - name: Open PR into dev
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          gh pr create \
-            --base dev \
-            --head sync/master-into-dev-${{ github.run_id }} \
-            --title "chore: sync master into dev after v${{ needs.release.outputs.version }}" \
-            --body "Automated sync of \`master\` into \`dev\` after release v${{ needs.release.outputs.version }}."
+          git push origin dev
