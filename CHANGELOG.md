@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-11-21
+
+### Changed
+
+- docs: add MkDocs documentation site
+
+- docs: add logo and update docs workflow
+
+- GHA workflow updated and deploy constrained to master
+
+- Logo in readme updated
+
+- Readme has been reduced
+
+- contact updated
+
+- Link to SPS wiki has been corrected
+
+- build: bump version to 1.2.3
+
+- test: add unit tests for convertToVCF path and line helpers
+
+- test: extend seeds file to one seed per simulator process
+
+- test: add unit tests for convertFiles ID and SBS conversion
+
+- test: add unit tests for CLI argument handling, dispatch and entry point
+
+- test: add unit tests for processivity subclassification and refineIMD
+
+- refactor: remove unimportable SigProfilerHotSpots module
+
+
+### Fixed
+
+- fix: use fork context instead of spawn to avoid forkserver crash and slowdown
+
+- fix: find input files in per-run subfolders created by newer MatrixGenerator
+
+- fix(hotspot): import Iterable from collections.abc in flatten
+
 ## [1.2.2] - 2025-07-21
 
 ### Added
