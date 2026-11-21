@@ -60,7 +60,7 @@ $ SigProfilerClusters analysis project genome contexts simContext input_path
 |-----------|---------------|-----------------------|
 | `analysis` | String | Analysis pipeline to run. Options: `"all"` (default), `"subClassify"`, `"hotspot"` |
 | `sortSims` | Boolean | Sort simulated files to ensure accuracy. Default: `True` |
-| `interdistance` | String | Mutation types for which to calculate IMDs. Use only for indel analysis. Default: `"ID"` |
+| `interdistance` | String | Mutation types for which to calculate IMDs. Use `"ID"` for indel analysis. Default: `"96"` |
 | `calculateIMD` | Boolean | Whether to calculate IMDs. Set to `False` to rerun subclassification only. Default: `True` |
 | `max_cpu` | Integer | Number of CPUs to use for parallel processing. Default: all available CPUs |
 | `subClassify` | Boolean | Subclassify clustered mutations into DBS, MBS, Omikli, and Kataegis (requires VAF scores in TCGA/Sanger format if `includedVAFs=True`). Default: `False` |
@@ -72,10 +72,12 @@ $ SigProfilerClusters analysis project genome contexts simContext input_path
 | Parameter | Variable Type | Parameter Description |
 |-----------|---------------|-----------------------|
 | `includedVAFs` | Boolean | Indicates that VAF scores are present in the input files and should be used for subclassification. Default: `True` |
-| `includedCCFs` | Boolean | Indicates that Cancer Cell Fraction (CCF) estimates are used instead of VAFs. When `True`, set `includedVAFs=False`. Default: `True` |
-| `variant_caller` | String | Format of the VAF column in the input VCF. Accepted values: `"standard"` (default), `"caveman"`, `"mutect2"` |
-| `windowSize` | Integer | Window size (in bp) for calculating mutation density in rainfall plots. Default: `10000000` |
-| `correction` | Boolean | Apply genome-wide mutational density correction to the IMD threshold. Default: `False` |
+| `includedCCFs` | Boolean | Indicates that Cancer Cell Fraction (CCF) estimates are used instead of VAFs. When `True`, set `includedVAFs=False`. Default: `False` |
+| `variant_caller` | String | Format of the VAF column in the input VCF. Accepted values: `"standard"` (default), `"caveman"`, `"mutect2"`, `"custom"` |
+| `tumor_vaf_column` | Integer | Only with `variant_caller="custom"`: 0-based index of the VCF column that holds the VAF. Default: `10`. Available in the Python API only (the command line does not expose it) |
+| `vaf_field` | String | Only with `variant_caller="custom"`: tag of the VAF inside the FORMAT/sample columns. Default: `"AF"`. Available in the Python API only (the command line does not expose it) |
+| `windowSize` | Integer | Window size (in bp) for calculating mutation density in rainfall plots. Default: `1000000` |
+| `correction` | Boolean | Apply genome-wide mutational density correction to the IMD threshold. Default: `True` |
 | `probability` | Boolean | Calculate the probability of observing each clustered event within its local genomic region. Results are appended as an extra column in the output VCF files under `[project_path]/output/clustered/`. Default: `False` |
 
 ## VAF Formats ##
@@ -85,8 +87,9 @@ SigProfilerClusters uses variant allele frequencies (VAF) to subclassify cluster
 | `variant_caller` value | VAF column location |
 |------------------------|---------------------|
 | `"caveman"` | 11th column; last colon-delimited value (e.g., `0:0:0.25`) |
-| `"standard"` | 8th or 10th column as `VAF=xx` or `AF=xx` |
-| `"mutect2"` | 10th or 11th column as `AF=xx` |
+| `"standard"` | `VAF=xx` in the INFO column (8th), or `AF=xx` inside the sample column (10th). An `AF=` tag in INFO is not read |
+| `"mutect2"` | `AF` in the FORMAT column, read from the sample column whose header is `TUMOR` |
+| `"custom"` | the column given by `tumor_vaf_column`, with the tag given by `vaf_field` in FORMAT |
 
 !!! tip "No VAF available"
     If your input files contain no VAF information, set `includedVAFs=False`. SigProfilerClusters will still subclassify clusters based solely on the calculated IMD values (when `subClassify=True`).
