@@ -10,32 +10,22 @@ import pickle
 
 import pytest
 
+from clustered_table_helpers import (
+    GENOME,
+    HEADER,
+    IMD_CUTOFF,
+    PROJECT,
+    SUBCLASSES,
+    entries as _entries,
+    no_matrices as _no_matrices,
+    populated as _populated,
+    positions as _positions,
+    row as _row,
+    setup,
+    subclass_path as _subclass_path,
+)
 from SigProfilerClusters import classifyFunctions
 from SigProfilerClusters.classifyFunctions import findClustersOfClusters_noVAF
-
-PROJECT = "proj"
-GENOME = "GRCh37"
-IMD_CUTOFF = 100  # sample-wide IMD: a distance above it is not clustered
-HEADER = (
-    "project\tsamples\tID\tgenome\tmutType\tchr\tstart\tend\tref\talt\t"
-    "mutClass\tIMDplot\tIMD\tprobability\n"
-)
-SUBCLASSES = [
-    "class1",
-    "class2",
-    "class3",
-    "class1a",
-    "class1b",
-    "class1c",
-    "class2Y",
-    "class2K",
-    "class2S",
-    "class2N",
-]
-
-
-def _no_matrices(*args, **kwargs):
-    """Stand-in for generateMatrices (needs a genome); must be importable by the pool."""
 
 
 @pytest.fixture(autouse=True)
@@ -43,30 +33,10 @@ def stub_matrix_generation(monkeypatch):
     monkeypatch.setattr(classifyFunctions, "generateMatrices", _no_matrices)
 
 
-def _row(pos, ref="C", alt="T", sample="S1", chrom="1"):
-    """One clustered SBS: project, sample, ID, genome, type, chr, start, end, ref, alt,
-    class, IMDplot, IMD, probability."""
-    cols = [PROJECT, sample, ".", GENOME, "SNP", chrom, str(pos), str(pos), ref, alt]
-    cols += ["SOMATIC", "1", "1", "1"]
-    return "\t".join(cols) + "\n"
-
-
 def _setup(tmp_path, rows, imds=None, correction=False, chrom_based=False):
-    imds = {"S1": IMD_CUTOFF} if imds is None else imds
-    vcf_dir = "vcf_files_corrected" if correction else "vcf_files"
-    clustered = tmp_path / "output" / vcf_dir / f"{PROJECT}_clustered"
-    (clustered / "SNV").mkdir(parents=True)
-    (clustered / "SNV" / f"{PROJECT}_clustered.txt").write_text(HEADER + "".join(rows))
-
-    data = tmp_path / "output" / "simulations" / "data"
-    data.mkdir(parents=True)
-    suffix = "_chrom" if chrom_based else ""
-    with open(str(data / f"imds{suffix}.pickle"), "wb") as f:
-        pickle.dump(imds, f)
-    if correction:
-        with open(str(data / "imds_corrected.pickle"), "wb") as f:
-            pickle.dump({sample: {} for sample in imds}, f)
-    return clustered
+    return setup(
+        tmp_path, rows, HEADER, f"SNV/{PROJECT}_clustered.txt", imds, correction, chrom_based
+    )
 
 
 def _run(tmp_path, rows, correction=False, chrom_based=False, imds=None):
@@ -85,25 +55,6 @@ def _run(tmp_path, rows, correction=False, chrom_based=False, imds=None):
         correction,
     )
     return clustered
-
-
-def _subclass_path(clustered, name, chrom_based=False):
-    suffix = "_chrom" if chrom_based else ""
-    return clustered / f"subclasses{suffix}" / name / f"{PROJECT}_clustered_{name}.txt"
-
-
-def _entries(clustered, name, chrom_based=False):
-    """Data rows (header skipped) of one subclass file, as lists of columns."""
-    lines = _subclass_path(clustered, name, chrom_based).read_text().splitlines()
-    return [line.split("\t") for line in lines[1:]]
-
-
-def _positions(clustered, name, chrom_based=False):
-    return [int(cols[6]) for cols in _entries(clustered, name, chrom_based)]
-
-
-def _populated(clustered):
-    return sorted(name for name in SUBCLASSES if _entries(clustered, name))
 
 
 # ─── event classes ───────────────────────────────────────────
