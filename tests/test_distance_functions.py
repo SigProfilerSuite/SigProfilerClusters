@@ -115,6 +115,57 @@ class TestDistanceOneFile:
             distance_one_file(["nope.txt"], str(tmp_path) + "/", str(out) + "/", CONTEXT, GENOME, CENTROMERES)
 
 
+class TestDistanceOneFileSameSite:
+    """Several alleles at the same position (audit finding 7). The IMD of a mutation is the
+    distance to the closest *other site*: a site with two alleles keeps the distance to its
+    neighbors instead of getting 0, which used to hide that distance and drop the rows."""
+
+    def _rows(self, tmp_path, mutations, name="S1_96_intradistance.txt"):
+        return _run_original(tmp_path, {"1.txt": mutations})[name]
+
+    def test_alleles_of_a_site_next_to_a_third_mutation_share_its_distance(self, tmp_path):
+        rows = self._rows(tmp_path, [_mutation(7000, alt="T"), _mutation(7000, alt="G"), _mutation(7050)])
+        assert _imds(rows) == [50, 50, 50]
+
+    def test_every_allele_keeps_its_own_columns(self, tmp_path):
+        rows = self._rows(tmp_path, [_mutation(7000, alt="T"), _mutation(7000, alt="G"), _mutation(7050)])
+        assert [(r[3], r[4], r[5]) for r in rows] == [("7000", "C", "T"), ("7000", "C", "G"), ("7050", "C", "T")]
+
+    def test_a_site_with_distant_neighbors_gets_the_distance_to_them_not_zero(self, tmp_path):
+        rows = self._rows(tmp_path, [_mutation(1000), _mutation(4000, alt="T"), _mutation(4000, alt="G")])
+        assert _imds(rows) == [3000, 3000, 3000]
+
+    def test_no_row_has_an_imd_of_zero(self, tmp_path):
+        rows = self._rows(tmp_path, [_mutation(100), _mutation(100, alt="G"), _mutation(110), _mutation(110, alt="A")])
+        assert 0 not in _imds(rows)
+
+    def test_every_input_mutation_has_an_output_row(self, tmp_path):
+        mutations = [_mutation(100), _mutation(100, alt="G"), _mutation(130), _mutation(5000, alt="T"), _mutation(5000, alt="A")]
+        assert len(self._rows(tmp_path, mutations)) == len(mutations)
+
+    def test_alleles_alone_have_no_neighbor_and_get_the_singleton_distance(self, tmp_path):
+        rows = self._rows(tmp_path, [_mutation(100, alt="T"), _mutation(100, alt="G")])
+        assert [(r[0], r[5]) for r in rows] == [("1000000", "T"), ("1000000", "G")]
+
+    def test_unsorted_input_with_a_repeated_site(self, tmp_path):
+        rows = self._rows(tmp_path, [_mutation(7050), _mutation(7000, alt="G"), _mutation(7000, alt="T")])
+        assert sorted((r[3], r[5]) for r in rows) == [("7000", "G"), ("7000", "T"), ("7050", "T")]
+        assert _imds(rows) == [50, 50, 50]
+
+    def test_the_same_position_in_two_samples_is_not_the_same_site(self, tmp_path):
+        mutations = [
+            _mutation(100, "S1"), _mutation(110, "S1"),
+            _mutation(100, "S2"), _mutation(150, "S2"),
+        ]
+        out = _run_original(tmp_path, {"1.txt": mutations})
+        assert _imds(out["S1_96_intradistance.txt"]) == [10, 10]
+        assert _imds(out["S2_96_intradistance.txt"]) == [50, 50]
+
+    def test_files_without_repeated_sites_are_unchanged(self, tmp_path):
+        rows = self._rows(tmp_path, [_mutation(100), _mutation(110), _mutation(1000)])
+        assert _imds(rows) == [10, 10, 890]
+
+
 # ─── distance_multiple_files_sims (simulations) ──────────────
 
 

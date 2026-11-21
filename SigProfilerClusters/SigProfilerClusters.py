@@ -360,6 +360,22 @@ def distance_one_file(
             lines = [line.strip().split() for line in f]
         original_lines = sorted(lines, key=lambda x: (x[0], int(x[2])))
 
+        # Audit finding 7: several alleles at one position of a sample (multi-allelic sites or
+        # duplicated records) are one site for the IMD. The IMD is computed between distinct
+        # sites and every allele of a site keeps the distance of its site; before, each allele
+        # got an IMD of 0, which hid its distance to the neighbors and made the rows disappear.
+        site_rows = {}
+        for line in original_lines:
+            site_rows.setdefault((line[0], line[2]), []).append(line)
+        original_lines = [rows[0] for rows in site_rows.values()]
+
+        def write_site(x, out_file):
+            """Write the row of a site once per allele found at that position."""
+            for allele in site_rows[(x[1], x[3])]:
+                row = list(x)
+                row[4], row[5] = allele[3], allele[4]
+                print("\t".join([str(y) for y in row]), file=out_file)
+
         # Ensure there are at least two mutations present for a given chromosome
         if len(original_lines) > 1:
             centro_start = centromeres[genome][original_lines[0][1]][
@@ -451,7 +467,7 @@ def distance_one_file(
             )
             for x in final_distances_filtered:
                 if x[1] == sample:
-                    print("\t".join([str(y) for y in x]), file=out_file)
+                    write_site(x, out_file)
                 else:
                     out_file.close()
                     sample = x[1]
@@ -464,7 +480,7 @@ def distance_one_file(
                         "a",
                         10000000,
                     )
-                    print("\t".join([str(y) for y in x]), file=out_file)
+                    write_site(x, out_file)
             out_file.close()
 
         elif len(original_lines) == 1:
@@ -480,9 +496,9 @@ def distance_one_file(
 
             with open(out_file, "a", 10000000) as out_file:
                 # Add a new column with the value 1 million
-                original_lines[0].insert(0, 1000000)
-                for mutation in original_lines:
-                    print("\t".join([str(y) for y in mutation]), file=out_file)
+                # no neighbor: every allele of the site gets the singleton distance
+                for mutation in site_rows[(sample, original_lines[0][2])]:
+                    print("\t".join([str(y) for y in [1000000] + mutation]), file=out_file)
 
 
 def eventProbability(
