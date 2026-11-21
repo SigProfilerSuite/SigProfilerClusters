@@ -36,17 +36,29 @@ def no_matrices(*args, **kwargs):
     """Stand-in for generateMatrices (needs a genome); must be importable by the pool."""
 
 
-def row(pos, ref="C", alt="T", sample="S1", chrom="1", vaf=None):
+def row(pos, ref="C", alt="T", sample="S1", chrom="1", vaf=None, imd=1):
     """One clustered SBS: project, sample, ID, genome, type, chr, start, end, ref, alt,
-    class, IMDplot, IMD and a last column: the VAF when given, else a probability of 1."""
+    class, IMDplot, IMD (distance to the previous mutation) and a last column: the VAF
+    when given, else a probability of 1."""
     cols = [PROJECT, sample, ".", GENOME, "SNP", chrom, str(pos), str(pos), ref, alt]
-    cols += ["SOMATIC", "1", "1", "1" if vaf is None else str(vaf)]
+    cols += ["SOMATIC", "1", str(imd), "1" if vaf is None else str(vaf)]
     return "\t".join(cols) + "\n"
 
 
-def setup(tmp_path, rows, header, table_name, imds=None, correction=False, chrom_based=False):
+def setup(
+    tmp_path,
+    rows,
+    header,
+    table_name,
+    imds=None,
+    correction=False,
+    chrom_based=False,
+    imds_corrected=None,
+):
     """Write the clustered table, named `table_name` inside the project folder, and the
-    IMD pickles read by the functions. Returns the clustered project folder."""
+    IMD pickles read by the functions. `imds_corrected` maps sample -> {region edge:
+    corrected IMD cutoff} (empty for every sample by default). Returns the clustered
+    project folder."""
     imds = {"S1": IMD_CUTOFF} if imds is None else imds
     vcf_dir = "vcf_files_corrected" if correction else "vcf_files"
     clustered = tmp_path / "output" / vcf_dir / f"{PROJECT}_clustered"
@@ -62,7 +74,10 @@ def setup(tmp_path, rows, header, table_name, imds=None, correction=False, chrom
         pickle.dump(imds, f)
     if correction:
         with open(str(data / "imds_corrected.pickle"), "wb") as f:
-            pickle.dump({sample: {} for sample in imds}, f)
+            pickle.dump(
+                {sample: {} for sample in imds} if imds_corrected is None else imds_corrected,
+                f,
+            )
     return clustered
 
 
