@@ -127,8 +127,11 @@ class TestSampleWithoutClustering:
         assert _table(tmp_path, "clustered") == []
         assert len(_table(tmp_path, "nonClustered")) == 400
 
-    def test_cutoff_is_small(self, tmp_path, sims):
-        assert _run(tmp_path, sims, _orig(0, 400, seed=2))[CUTOFF] < 1000
+    def test_cutoff_does_not_reach_any_observed_distance(self, tmp_path, sims):
+        # the scan starts at the first IMD bin with observed mutations (audit finding 1), so
+        # for a background-like sample the cutoff stays below its shortest distance
+        distances = _orig(0, 400, seed=2)
+        assert _run(tmp_path, sims, distances)[CUTOFF] <= min(distances)
 
 
 # ─── correctionData mode ─────────────────────────────────────
@@ -149,10 +152,13 @@ class TestCorrectionDataMode:
 
 class TestRegionCorrectedCutoff:
     chrom_lengths = {GENOME: {"1": 0}}
+    far = 20000  # above the 10000 cap of the sample cutoff: only a regional cutoff can cluster it
 
     def _distances(self):
+        # background without any short distance, so that only the planted ones can be clustered
         rng = np.random.default_rng(3)
-        return _background(rng, 100) + [5000] * 20
+        background = [d for d in _background(rng, 150) if d > 50000][:100]
+        return background + [self.far] * 20
 
     def _run(self, tmp_path, sims, regions, imds_corrected):
         return _run(
@@ -170,12 +176,12 @@ class TestRegionCorrectedCutoff:
         assert _run(tmp_path, sims, self._distances())[N_CLUSTERED] == 0
 
     def test_region_cutoff_clusters_mutations_above_the_sample_cutoff(self, tmp_path, sims):
-        result = self._run(tmp_path, sims, [EDGE], {"S1": {EDGE: 6000}})
+        result = self._run(tmp_path, sims, [EDGE], {"S1": {EDGE: 30000}})
         assert result[N_CLUSTERED] == 20
-        assert {int(row[-1]) for row in _table(tmp_path, "clustered")} == {5000}
+        assert {int(row[-1]) for row in _table(tmp_path, "clustered")} == {self.far}
 
     def test_region_cutoff_below_the_distance_does_not_cluster(self, tmp_path, sims):
-        assert self._run(tmp_path, sims, [EDGE], {"S1": {EDGE: 4000}})[N_CLUSTERED] == 0
+        assert self._run(tmp_path, sims, [EDGE], {"S1": {EDGE: 15000}})[N_CLUSTERED] == 0
 
     def test_without_regions_the_sample_cutoff_is_used(self, tmp_path, sims):
         assert self._run(tmp_path, sims, [], {"S1": {}})[N_CLUSTERED] == 0

@@ -2,8 +2,8 @@
 (audit finding #18). The inputs are frozen: simulated background distances and the
 observed sample are drawn with the standard library `random` module and fixed seeds, so the
 expected cutoffs and mutation identities are exact and reproducible.
-Strict xfails freeze the failures of audit finding #1 (planted clusters that the cutoff scan
-misses); they fail when the cutoff search is fixed.
+The planted clusters of audit finding #1 (clusters with no mutations in the leading IMD bins, which
+the cutoff scan used to miss) are checked across several backgrounds.
 No genome reference required.
 Run with: pytest tests/test_golden_cutoff.py -v
 """
@@ -67,7 +67,7 @@ class TestFrozenCutoffs:
 
     def test_null_sample_has_no_clustered_mutations(self, tmp_path):
         cutoff, clustered = _run(tmp_path, self.sims(), null_sample())
-        assert (cutoff, clustered) == (128, [])
+        assert (cutoff, clustered) == (4096, [])
 
     def test_cluster_with_adjacent_mutations_is_called_exactly(self, tmp_path):
         cutoff, clustered = _run(tmp_path, self.sims(), adjacent_cluster())
@@ -87,28 +87,30 @@ class TestFrozenCutoffs:
         assert first == second
 
 
-class TestPlantedClustersMissedByTheScan:
-    """With the background of seed 6 the scan stops in the leading bins (cutoff 8) and calls
-    nothing, although the planted clusters are obvious (audit samples S2 and S4)."""
+# backgrounds in which the old scan stopped in a leading bin and called nothing
+EARLY_STOP_SEEDS = [2, 6, 12, 15, 18, 22, 27, 28]
+
+
+class TestPlantedClustersWithLeadingSimulatedDistances:
+    """With these backgrounds a simulation has a short distance in a bin where the sample has
+    none; the scan used to stop there (cutoff 8) and call nothing (audit samples S2 and S4)."""
 
     sims = staticmethod(lambda: _simulations(6))
 
-    @pytest.mark.xfail(
-        reason="audit finding 1: the cutoff scan stops at the first non-significant leading bin "
-        "(cutoff 8) and misses a planted 40-mutation cluster",
-        strict=True,
-    )
     def test_s2_like_cluster_is_detected(self, tmp_path):
         _, clustered = _run(tmp_path, self.sims(), s2_like())
-        assert len(clustered) >= 30
+        assert clustered == [300 + 5 * i for i in range(40)]
 
-    @pytest.mark.xfail(
-        reason="audit finding 1: the same early stop misses a planted 18-mutation cluster",
-        strict=True,
-    )
     def test_s4_like_cluster_is_detected(self, tmp_path):
         _, clustered = _run(tmp_path, self.sims(), s4_like())
         assert clustered == [100 + 6 * i for i in range(18)]
+
+    @pytest.mark.parametrize("seed", EARLY_STOP_SEEDS)
+    def test_clusters_are_detected_with_every_background(self, tmp_path, seed):
+        _, s2 = _run(tmp_path, _simulations(seed), s2_like(), name="s2")
+        _, s4 = _run(tmp_path, _simulations(seed), s4_like(), name="s4")
+        assert s2 == [300 + 5 * i for i in range(40)]
+        assert s4 == [100 + 6 * i for i in range(18)]
 
     def test_null_sample_stays_negative_with_this_background(self, tmp_path):
         _, clustered = _run(tmp_path, self.sims(), null_sample())
