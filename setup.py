@@ -61,5 +61,6 @@ setup(
             "SigProfilerClusters=SigProfilerClusters.sigprofilerclusters_cli:main_function",
         ],
     },
+    extras_require={"tests": ["pytest"]},
     zip_safe=False,
 )

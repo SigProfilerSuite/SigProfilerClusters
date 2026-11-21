@@ -131,9 +131,8 @@ def run_analysis_for_variant_callers_separate_steps(
 
 
 def run_one_genome_test(caller):
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
-    base_path = os.path.join(repo_root, "SigProfilerClusters", "tests")
+    # The data live next to this file, whatever the checkout directory is called
+    base_path = os.path.dirname(os.path.abspath(__file__))
 
     genome = "GRCh37"
     simulations = 100
