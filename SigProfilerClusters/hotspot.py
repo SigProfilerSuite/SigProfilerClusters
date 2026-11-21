@@ -27,7 +27,7 @@ import random
 import multiprocessing as mp
 
 # import seaborn as sns
-# from collections import Iterable
+from collections.abc import Iterable
 from itertools import chain
 import sys
 
