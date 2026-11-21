@@ -30,11 +30,11 @@ def close_figures():
     plt.close("all")
 
 
-def _row(sample, pos, imd, chrom="1"):
-    return f"{PROJECT}\t{sample}\t.\tGRCh37\tINDEL\t{chrom}\t{pos}\t{pos}\tA\tAT\tSOMATIC\t{imd}\t{imd}\n"
+def _row(sample, pos, imd, chrom="1", genome="GRCh37"):
+    return f"{PROJECT}\t{sample}\t.\t{genome}\tINDEL\t{chrom}\t{pos}\t{pos}\tA\tAT\tSOMATIC\t{imd}\t{imd}\n"
 
 
-def _setup(tmp_path, samples=("S1",), correction=True):
+def _setup(tmp_path, samples=("S1",), correction=True, genome="GRCh37"):
     chrom_dir = tmp_path / "chroms"
     chrom_dir.mkdir()
     for chrom, length in CHROMOSOMES.items():
@@ -54,28 +54,30 @@ def _setup(tmp_path, samples=("S1",), correction=True):
     non_clustered = base / f"{PROJECT}_nonClustered" / "INDEL"
     clustered.mkdir(parents=True)
     non_clustered.mkdir(parents=True)
-    clustered_rows = "".join(_row(s, 1000 + i * 50, 100) for s in samples for i in range(20))
-    non_clustered_rows = "".join(_row(s, 50000 + i * 3000, 3000) for s in samples for i in range(30))
+    clustered_rows = "".join(_row(s, 1000 + i * 50, 100, genome=genome) for s in samples for i in range(20))
+    non_clustered_rows = "".join(
+        _row(s, 50000 + i * 3000, 3000, genome=genome) for s in samples for i in range(30)
+    )
     (clustered / f"{PROJECT}_clustered.txt").write_text(HEADER + clustered_rows)
     (non_clustered / f"{PROJECT}_nonClustered.txt").write_text(HEADER + non_clustered_rows)
     return chrom_dir
 
 
-def _run(tmp_path, correction=True, samples=("S1",)):
-    chrom_dir = _setup(tmp_path, samples, correction)
+def _run(tmp_path, correction=True, samples=("S1",), bed=None, genome="GRCh37"):
+    chrom_dir = _setup(tmp_path, samples, correction, genome)
     rainfall(
         False,
         PROJECT,
         str(tmp_path) + "/",
         str(chrom_dir) + "/",
-        CHROM_LENGTHS,
-        CENTROMERES,
+        {genome: CHROM_LENGTHS["GRCh37"]},
+        {genome: CENTROMERES["GRCh37"]},
         "ID",
         False,
         False,
         correction,
         10000000,
-        None,
+        None if bed is None else str(bed),
     )
     return tmp_path / "output" / "plots"
 
@@ -122,3 +124,71 @@ class TestRainfallId:
                 False, PROJECT, str(tmp_path) + "/", str(chrom_dir) + "/", CHROM_LENGTHS,
                 CENTROMERES, "ID", False, False, True, 10000000, None,
             )
+
+
+# ─── highlighted BED ranges ──────────────────────────────────
+
+BED_HEADER = "chrom\tstart\tend\tsample\tname\tscore\tgroup\tcolor\n"
+
+
+@pytest.fixture
+def range_lines(monkeypatch):
+    """Record the (x, color) of the vertical lines drawn for BED ranges (zorder -20)."""
+    lines = []
+    original = matplotlib.axes.Axes.axvline
+
+    def recorder(self, x=0, *args, **kwargs):
+        if kwargs.get("zorder") == -20:
+            lines.append((x, kwargs.get("color")))
+        return original(self, x, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "axvline", recorder)
+    return lines
+
+
+def _bed(tmp_path, *records):
+    path = tmp_path / "ranges.bed"
+    path.write_text(BED_HEADER + "".join("\t".join(map(str, r)) + "\n" for r in records))
+    return path
+
+
+class TestBedRanges:
+    def test_every_range_is_drawn_as_two_vertical_lines(self, tmp_path, range_lines):
+        bed = _bed(tmp_path, ("1", 10000, 20000, "S1", "a", 0, 1, "red"), ("1", 30000, 40000, "S1", "b", 0, 1, "blue"))
+        _run(tmp_path, bed=bed)
+        assert sorted(range_lines) == [(10000, "red"), (20000, "red"), (30000, "blue"), (40000, "blue")]
+
+    def test_ranges_of_other_samples_are_not_drawn(self, tmp_path, range_lines):
+        bed = _bed(tmp_path, ("1", 10000, 20000, "OTHER", "a", 0, 1, "red"))
+        _run(tmp_path, bed=bed)
+        assert range_lines == []
+
+    def test_ranges_on_unknown_chromosomes_are_skipped(self, tmp_path, range_lines):
+        bed = _bed(tmp_path, ("Z", 10000, 20000, "S1", "a", 0, 1, "red"), ("1", 30000, 40000, "S1", "b", 0, 1, "blue"))
+        _run(tmp_path, bed=bed)
+        assert sorted(range_lines) == [(30000, "blue"), (40000, "blue")]
+
+    def test_each_sample_gets_only_its_own_ranges(self, tmp_path, range_lines):
+        bed = _bed(
+            tmp_path,
+            ("1", 10000, 20000, "S1", "a", 0, 1, "red"),
+            ("1", 50000, 60000, "S2", "b", 0, 1, "blue"),
+        )
+        _run(tmp_path, samples=("S1", "S2"), bed=bed)
+        assert sorted(range_lines) == [(10000, "red"), (20000, "red"), (50000, "blue"), (60000, "blue")]
+
+
+# ─── chromosome lengths ──────────────────────────────────────
+
+
+class TestChromosomeLengths:
+    def test_other_genomes_use_the_given_chromosome_lengths(self, tmp_path, range_lines):
+        # chromosome 1 is 400000 bp in the synthetic genome, plus a 10 kb gap
+        bed = _bed(tmp_path, ("2", 1000, 2000, "S1", "a", 0, 1, "green"))
+        _run(tmp_path, bed=bed, genome="GRCh38")
+        assert [x for x, _ in range_lines] == [411000, 412000]
+
+    def test_grch37_uses_its_own_lengths_instead_of_the_argument(self, tmp_path, range_lines):
+        bed = _bed(tmp_path, ("2", 1000, 2000, "S1", "a", 0, 1, "green"))
+        _run(tmp_path, bed=bed, genome="GRCh37")
+        assert [x for x, _ in range_lines] == [249_261_619, 249_262_619]
