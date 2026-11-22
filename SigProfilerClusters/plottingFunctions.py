@@ -3533,10 +3533,13 @@ def rainfall(
                     if str(chrom) in [
                         str(x) for x in allMutations[subclass].loc[sample].index
                     ]:
+                        # Audit finding 113: select with a list of keys so that pandas always
+                        # returns a DataFrame; a single matching row came back as a Series and
+                        # pos.loc[(sample, chrom), ...] below raised IndexingError.
                         try:
-                            pos = allMutations[subclass].loc[sample, str(chrom)]
+                            pos = allMutations[subclass].loc[[(sample, str(chrom))]]
                         except:
-                            pos = allMutations[subclass].loc[sample, int(chrom)]
+                            pos = allMutations[subclass].loc[[(sample, int(chrom))]]
 
                         # try:
                         if True:
