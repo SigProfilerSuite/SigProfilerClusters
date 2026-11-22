@@ -364,147 +364,156 @@ def distance_one_file(
         with open(original_samples + file) as f:
 
             lines = [line.strip().split() for line in f]
-        original_lines = sorted(lines, key=lambda x: (x[0], int(x[2])))
+        sorted_lines = sorted(lines, key=lambda x: (x[0], int(x[2])))
 
-        # Audit finding 7: several alleles at one position of a sample (multi-allelic sites or
-        # duplicated records) are one site for the IMD. The IMD is computed between distinct
-        # sites and every allele of a site keeps the distance of its site; before, each allele
-        # got an IMD of 0, which hid its distance to the neighbors and made the rows disappear.
-        site_rows = {}
-        for line in original_lines:
-            site_rows.setdefault((line[0], line[2]), []).append(line)
-        original_lines = [rows[0] for rows in site_rows.values()]
+        # Audit finding 5: the file of a chromosome holds the mutations of every sample, and the
+        # IMD of the first and last mutation of a sample, and of a sample with a single
+        # mutation, used to be computed with a neighbour of another sample. Each sample is now
+        # processed on its own, so no distance crosses a sample boundary.
+        lines_by_sample = {}
+        for line in sorted_lines:
+            lines_by_sample.setdefault(line[0], []).append(line)
+        for original_lines in lines_by_sample.values():
 
-        def write_site(x, out_file):
-            """Write the row of a site once per allele found at that position."""
-            for allele in site_rows[(x[1], x[3])]:
-                row = list(x)
-                row[4], row[5] = allele[3], allele[4]
-                print("\t".join([str(y) for y in row]), file=out_file)
+            # Audit finding 7: several alleles at one position of a sample (multi-allelic sites or
+            # duplicated records) are one site for the IMD. The IMD is computed between distinct
+            # sites and every allele of a site keeps the distance of its site; before, each allele
+            # got an IMD of 0, which hid its distance to the neighbors and made the rows disappear.
+            site_rows = {}
+            for line in original_lines:
+                site_rows.setdefault((line[0], line[2]), []).append(line)
+            original_lines = [rows[0] for rows in site_rows.values()]
 
-        # Ensure there are at least two mutations present for a given chromosome
-        if len(original_lines) > 1:
-            centro_start = centromeres[genome][original_lines[0][1]][
-                0
-            ]  # Position of the start of the centromere
-            centro_end = centromeres[genome][original_lines[0][1]][
-                1
-            ]  # Position of the end of the centromere
+            def write_site(x, out_file):
+                """Write the row of a site once per allele found at that position."""
+                for allele in site_rows[(x[1], x[3])]:
+                    row = list(x)
+                    row[4], row[5] = allele[3], allele[4]
+                    print("\t".join([str(y) for y in row]), file=out_file)
 
-            # Calculate the minimum IMDs ensuring that the samples, chromosome, and chromosome arms match
-            # distances = [[int(y[2])-(int(x[2])-2+len(x[3])+len(x[4]))] + x + ['c'] if x[0] == y[0] and int(y[2])<centro_start else [int(y[2])-(int(x[2])-2+len(x[3])+len(x[4]))] + x +['c'] if x[0] == y[0] and centro_end<int(x[2]) else 'aa' if x[0] != y[0] else [int(x[2]) - (int(original_lines[original_lines.index(x)-1][2])-2+len(original_lines[original_lines.index(x)-1][3])+len(original_lines[original_lines.index(x)-1][4]))] + x +['d'] for x,y in zip(original_lines, original_lines[1:])]
-            distances = [
-                (
-                    [int(y[2]) - (int(x[2]) - 2 + len(x[3]) + len(x[4]))] + x + ["c"]
-                    if x[0] == y[0] and int(y[2]) < centro_start
-                    else (
-                        [int(y[2]) - (int(x[2]) - 2 + len(x[3]) + len(x[4]))]
-                        + x
-                        + ["c"]
-                        if x[0] == y[0] and centro_end < int(x[2])
-                        else [
-                            abs(
-                                int(x[2])
-                                - (
-                                    int(original_lines[original_lines.index(x) - 1][2])
-                                    - 2
-                                    + len(
-                                        original_lines[original_lines.index(x) - 1][3]
-                                    )
-                                    + len(
-                                        original_lines[original_lines.index(x) - 1][4]
+            # Ensure there are at least two mutations present for a given chromosome
+            if len(original_lines) > 1:
+                centro_start = centromeres[genome][original_lines[0][1]][
+                    0
+                ]  # Position of the start of the centromere
+                centro_end = centromeres[genome][original_lines[0][1]][
+                    1
+                ]  # Position of the end of the centromere
+
+                # Calculate the minimum IMDs ensuring that the samples, chromosome, and chromosome arms match
+                # distances = [[int(y[2])-(int(x[2])-2+len(x[3])+len(x[4]))] + x + ['c'] if x[0] == y[0] and int(y[2])<centro_start else [int(y[2])-(int(x[2])-2+len(x[3])+len(x[4]))] + x +['c'] if x[0] == y[0] and centro_end<int(x[2]) else 'aa' if x[0] != y[0] else [int(x[2]) - (int(original_lines[original_lines.index(x)-1][2])-2+len(original_lines[original_lines.index(x)-1][3])+len(original_lines[original_lines.index(x)-1][4]))] + x +['d'] for x,y in zip(original_lines, original_lines[1:])]
+                distances = [
+                    (
+                        [int(y[2]) - (int(x[2]) - 2 + len(x[3]) + len(x[4]))] + x + ["c"]
+                        if x[0] == y[0] and int(y[2]) < centro_start
+                        else (
+                            [int(y[2]) - (int(x[2]) - 2 + len(x[3]) + len(x[4]))]
+                            + x
+                            + ["c"]
+                            if x[0] == y[0] and centro_end < int(x[2])
+                            else [
+                                abs(
+                                    int(x[2])
+                                    - (
+                                        int(original_lines[original_lines.index(x) - 1][2])
+                                        - 2
+                                        + len(
+                                            original_lines[original_lines.index(x) - 1][3]
+                                        )
+                                        + len(
+                                            original_lines[original_lines.index(x) - 1][4]
+                                        )
                                     )
                                 )
-                            )
-                        ]
-                        + x
-                        + ["d"]
+                            ]
+                            + x
+                            + ["d"]
+                        )
                     )
-                )
-                for x, y in zip(original_lines, original_lines[1:])
-            ]
-            distances_new = distances[:] + [
-                [distances[-1][0]] + original_lines[-1] + [distances[-1][-1]]
-            ]
-            # final_distances = ['bb' if x[1] != y[1] else [min(x[0],y[0])]+y[1:-1]+[x[0]] if x[0] != 'a' and y[0] != 'a' and x[-1] != 'd' else [y[0]] + y[1:-1]+[y[0]] if x[-1] == 'd' and x[0] != 'a' and y[0] != 'a' else x if y[0] == 'a' and x[0] != 'a' else y if x[0] == 'a' and y[0] != 'a' else 'bb' for x,y in zip(distances_new[:], distances_new[1:])]
-            final_distances = [
-                (
-                    [x[0]] + x[1:-1] + [x[0]]
-                    if x[1] != y[1] and y[1] == "a"
-                    else (
-                        [min(x[0], y[0])] + y[1:-1] + [x[0]]
-                        if x[0] != "a" and y[0] != "a" and x[-1] != "d"
+                    for x, y in zip(original_lines, original_lines[1:])
+                ]
+                distances_new = distances[:] + [
+                    [distances[-1][0]] + original_lines[-1] + [distances[-1][-1]]
+                ]
+                # final_distances = ['bb' if x[1] != y[1] else [min(x[0],y[0])]+y[1:-1]+[x[0]] if x[0] != 'a' and y[0] != 'a' and x[-1] != 'd' else [y[0]] + y[1:-1]+[y[0]] if x[-1] == 'd' and x[0] != 'a' and y[0] != 'a' else x if y[0] == 'a' and x[0] != 'a' else y if x[0] == 'a' and y[0] != 'a' else 'bb' for x,y in zip(distances_new[:], distances_new[1:])]
+                final_distances = [
+                    (
+                        [x[0]] + x[1:-1] + [x[0]]
+                        if x[1] != y[1] and y[1] == "a"
                         else (
-                            [y[0]] + y[1:-1] + [y[0]]
-                            if x[-1] == "d" and x[0] != "a" and y[0] != "a"
+                            [min(x[0], y[0])] + y[1:-1] + [x[0]]
+                            if x[0] != "a" and y[0] != "a" and x[-1] != "d"
                             else (
-                                x
-                                if y[0] == "a" and x[0] != "a"
-                                else y if x[0] == "a" and y[0] != "a" else "bb"
+                                [y[0]] + y[1:-1] + [y[0]]
+                                if x[-1] == "d" and x[0] != "a" and y[0] != "a"
+                                else (
+                                    x
+                                    if y[0] == "a" and x[0] != "a"
+                                    else y if x[0] == "a" and y[0] != "a" else "bb"
+                                )
                             )
                         )
                     )
+                    for x, y in zip(distances_new[:], distances_new[1:])
+                ]
+                final_distances = [distances_new[0]] + final_distances
+                final_distances_filtered = [
+                    x for x in final_distances if x[0] != "b" and x[0] != "a"
+                ]
+
+                if (
+                    len(final_distances_filtered) == 0
+                ):  # Continue if there are no IMDs (ex. only two mutation are a chromosome and occured on different arms)
+                    continue
+
+                # Open the current sample file and start iterating through the final distances
+                # If a new sample is reached, close the current file and open the new one
+                # The files are written under the simulations/ folder with the following fiels:
+                # <IMD> <Sample_sim#> <chrom> <pos> <ref> <alt> <plotIMD_for_rainfall plots>
+                sample = final_distances_filtered[0][1]
+                out_file = open(
+                    output_path_original
+                    + sample
+                    + "_"
+                    + file_context2
+                    + "_intradistance.txt",
+                    "a",
+                    10000000,
                 )
-                for x, y in zip(distances_new[:], distances_new[1:])
-            ]
-            final_distances = [distances_new[0]] + final_distances
-            final_distances_filtered = [
-                x for x in final_distances if x[0] != "b" and x[0] != "a"
-            ]
+                for x in final_distances_filtered:
+                    if x[1] == sample:
+                        write_site(x, out_file)
+                    else:
+                        out_file.close()
+                        sample = x[1]
+                        out_file = open(
+                            output_path_original
+                            + sample
+                            + "_"
+                            + file_context2
+                            + "_intradistance.txt",
+                            "a",
+                            10000000,
+                        )
+                        write_site(x, out_file)
+                out_file.close()
 
-            if (
-                len(final_distances_filtered) == 0
-            ):  # Continue if there are no IMDs (ex. only two mutation are a chromosome and occured on different arms)
-                continue
+            elif len(original_lines) == 1:
+                # Handle the case when there is only one mutation
+                sample = original_lines[0][0]
+                out_file = (
+                    output_path_original
+                    + sample
+                    + "_"
+                    + file_context2
+                    + "_intradistance.txt"
+                )
 
-            # Open the current sample file and start iterating through the final distances
-            # If a new sample is reached, close the current file and open the new one
-            # The files are written under the simulations/ folder with the following fiels:
-            # <IMD> <Sample_sim#> <chrom> <pos> <ref> <alt> <plotIMD_for_rainfall plots>
-            sample = final_distances_filtered[0][1]
-            out_file = open(
-                output_path_original
-                + sample
-                + "_"
-                + file_context2
-                + "_intradistance.txt",
-                "a",
-                10000000,
-            )
-            for x in final_distances_filtered:
-                if x[1] == sample:
-                    write_site(x, out_file)
-                else:
-                    out_file.close()
-                    sample = x[1]
-                    out_file = open(
-                        output_path_original
-                        + sample
-                        + "_"
-                        + file_context2
-                        + "_intradistance.txt",
-                        "a",
-                        10000000,
-                    )
-                    write_site(x, out_file)
-            out_file.close()
-
-        elif len(original_lines) == 1:
-            # Handle the case when there is only one mutation
-            sample = original_lines[0][0]
-            out_file = (
-                output_path_original
-                + sample
-                + "_"
-                + file_context2
-                + "_intradistance.txt"
-            )
-
-            with open(out_file, "a", 10000000) as out_file:
-                # Add a new column with the value 1 million
-                # no neighbor: every allele of the site gets the singleton distance
-                for mutation in site_rows[(sample, original_lines[0][2])]:
-                    print("\t".join([str(y) for y in [1000000] + mutation]), file=out_file)
+                with open(out_file, "a", 10000000) as out_file:
+                    # Add a new column with the value 1 million
+                    # no neighbor: every allele of the site gets the singleton distance
+                    for mutation in site_rows[(sample, original_lines[0][2])]:
+                        print("\t".join([str(y) for y in [1000000] + mutation]), file=out_file)
 
 
 def eventProbability(

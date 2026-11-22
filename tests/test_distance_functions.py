@@ -166,6 +166,54 @@ class TestDistanceOneFileSameSite:
         assert _imds(rows) == [10, 10, 890]
 
 
+class TestDistanceOneFileSampleBoundaries:
+    """The file of a chromosome holds the mutations of every sample; no distance may cross a
+    sample boundary (audit finding 5)."""
+
+    def _mutations(self):
+        return [
+            _mutation(100, "S1"), _mutation(110, "S1"),
+            _mutation(120, "S2"), _mutation(5000, "S2"),
+            _mutation(3_000_000, "S3"),
+        ]
+
+    def test_a_sample_with_one_mutation_has_no_neighbor(self, tmp_path):
+        out = _run_original(tmp_path, {"1.txt": [_mutation(100, "S1"), _mutation(110, "S1"), _mutation(50000, "S2")]})
+        assert out["S2_96_intradistance.txt"] == [["1000000", "S2", "1", "50000", "C", "T"]]
+
+    def test_isolated_mutations_do_not_inherit_the_distance_of_another_sample(self, tmp_path):
+        mutations = [_mutation(1000, "S1"), _mutation(1100, "S1"), _mutation(5_001_000, "S2"), _mutation(9_000_000, "S3")]
+        out = _run_original(tmp_path, {"1.txt": mutations})
+        assert _imds(out["S2_96_intradistance.txt"]) == [1000000]
+        assert _imds(out["S3_96_intradistance.txt"]) == [1000000]
+
+    def test_the_first_mutation_of_a_sample_ignores_the_last_of_the_previous_sample(self, tmp_path):
+        out = _run_original(tmp_path, {"1.txt": self._mutations()})
+        # S2 starts 10 bp after the last mutation of S1, but its own neighbor is 4880 bp away
+        assert _imds(out["S2_96_intradistance.txt"]) == [4880, 4880]
+
+    def test_the_last_mutation_of_a_sample_ignores_the_first_of_the_next_sample(self, tmp_path):
+        mutations = [_mutation(100, "S1"), _mutation(5000, "S1"), _mutation(5010, "S2"), _mutation(5100, "S2")]
+        out = _run_original(tmp_path, {"1.txt": mutations})
+        assert _imds(out["S1_96_intradistance.txt"]) == [4900, 4900]
+
+    def test_samples_in_one_file_give_the_same_rows_as_in_separate_files(self, tmp_path):
+        (tmp_path / "together").mkdir()
+        together = _run_original(tmp_path / "together", {"1.txt": self._mutations()})
+        separate = {}
+        for sample in ("S1", "S2", "S3"):
+            (tmp_path / sample).mkdir()
+            rows = [m for m in self._mutations() if m[0] == sample]
+            separate.update(_run_original(tmp_path / sample, {"1.txt": rows}))
+        assert together == separate
+
+    def test_no_distance_is_shared_between_samples(self, tmp_path):
+        out = _run_original(tmp_path, {"1.txt": self._mutations()})
+        for name, rows in out.items():
+            sample = name.split("_")[0]
+            assert all(r[1] == sample for r in rows)
+
+
 # ─── distance_multiple_files_sims (simulations) ──────────────
 
 
