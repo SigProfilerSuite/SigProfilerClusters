@@ -56,6 +56,27 @@ def z_test(x, mu, sigma):
     return (z, p)
 
 
+def enrichment_p_value(observed, expected, sigma):
+    """
+    One-sided p-value for an excess of observed mutations over the simulated background.
+
+    Unlike z_test (two-sided, 2 * (1 - cdf(z)), which exceeds 1 for a deficit), this is
+    P(Z >= z): about 1 when the observed count is at or below the expectation and small only
+    for a real excess. Used by first_run to choose the sample-specific IMD cutoff.
+
+    Parameters:
+              observed	->	cumulative number of mutations observed in the original sample (int)
+              expected	->	cumulative number expected from the simulations (float)
+                 sigma	->	standard deviation of the cumulative simulated counts (float)
+
+    Returns:
+            p	->	one-sided p_value (float); 0 for an excess and 1 otherwise when sigma is 0
+    """
+    if sigma == 0:
+        return 0.0 if observed > expected else 1.0
+    return 1 - norm.cdf((observed - expected) / sigma)
+
+
 def plot_clustered(orig_bins, sim_bins, bincenters2, panel4, lower_CI, upper_CI):
     """
     Plots the histogram of IMDs in the middle right-hand column of the intradistance plots for
@@ -499,6 +520,7 @@ def first_run(
     avg_bin_counts = avg_bin_counts[1:]
     mean_counts = mean_counts[1:]
     std_dev = std_dev[1:]
+    std_dev_cum = std_dev_cum[1:]
     upper_CI = upper_CI[1:]
     lower_CI = lower_CI[1:]
 
@@ -526,19 +548,22 @@ def first_run(
 
         current_orig_mutations_cum += y2[i]
         current_mean_cum += mean_counts[i]
-        current_stdev_cum += std_dev[i]
+        # Audit finding 1: the SD of the cumulative simulated counts, which was computed
+        # (std_dev_cum) but never used, replaces the sum of the per-bin SDs.
+        current_stdev_cum = std_dev_cum[i]
 
-        if current_stdev == 0:
-            p = 0
-        else:
-            # z, p = z_test (current_orig_mutations, current_mean, current_stdev)
-            z, p = z_test(
-                current_orig_mutations_cum, current_mean_cum, current_stdev_cum
-            )
+        p = enrichment_p_value(
+            current_orig_mutations_cum, current_mean_cum, current_stdev_cum
+        )
         p_vals.append(p)
     q_vals = sm.fdrcorrection(p_vals)[1]
 
-    for i in range(0, len(avg_bin_counts), 1):
+    # Audit finding 1: start the scan at the first IMD bin that holds observed mutations.
+    # Earlier bins cannot contain clustered mutations of this sample; if a simulation happens
+    # to have a short distance there, the sample looks depleted, the scan used to stop in that
+    # bin and the sample was reported with a tiny cutoff and no clustered mutations.
+    first_observed_bin = next((j for j in range(len(y2)) if y2[j] > 0), 0)
+    for i in range(first_observed_bin, len(avg_bin_counts), 1):
         sim_mutations += avg_bin_counts[i]
         orig_mutations += y2[i]
         total_mutations = total_mutations + avg_bin_counts[i] + y2[i]

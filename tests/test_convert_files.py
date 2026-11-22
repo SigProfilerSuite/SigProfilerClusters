@@ -119,15 +119,24 @@ class TestConvertFilesIndel:
         with pytest.raises(FileNotFoundError):
             convertFiles(str(tmp_path), "ID", PROJECT, True)
 
-    @pytest.mark.xfail(
-        reason="empty clustered ID table: 'if len(allLines) == 0: pass' does not "
-        "stop execution, so allLines[0] raises IndexError",
-        raises=IndexError,
-        strict=True,
-    )
-    def test_empty_clustered_table(self, tmp_path):
+    def test_empty_clustered_table_writes_no_clustered_vcf(self, tmp_path):
+        # audit finding 28: an empty clustered table used to raise IndexError
         _setup_id(tmp_path, [], [_row("S1", "1", "1", "A", "AT")])
         convertFiles(str(tmp_path), "ID", PROJECT, True)
+        assert os.listdir(str(tmp_path / "output" / "clustered" / "ID")) == []
+        assert os.listdir(str(tmp_path / "output" / "nonClustered" / "ID")) == ["S1.vcf"]
+
+    def test_empty_non_clustered_table_writes_no_non_clustered_vcf(self, tmp_path):
+        _setup_id(tmp_path, [_row("S1", "1", "100", "A", "AT")], [])
+        convertFiles(str(tmp_path), "ID", PROJECT, True)
+        assert os.listdir(str(tmp_path / "output" / "nonClustered" / "ID")) == []
+        assert os.listdir(str(tmp_path / "output" / "clustered" / "ID")) == ["S1.vcf"]
+
+    def test_both_tables_empty(self, tmp_path):
+        _setup_id(tmp_path, [], [])
+        convertFiles(str(tmp_path), "ID", PROJECT, True)
+        assert os.listdir(str(tmp_path / "output" / "clustered" / "ID")) == []
+        assert os.listdir(str(tmp_path / "output" / "nonClustered" / "ID")) == []
 
 
 # ─── SBS (SNV) context ───────────────────────────────────────
@@ -170,6 +179,13 @@ class TestConvertFilesSnv:
         convertFiles(str(tmp_path), "96", PROJECT, True)
         for folder in SNV_CLASSES.values():
             assert os.listdir(str(tmp_path / "output" / "clustered" / folder)) == []
+
+    def test_empty_non_clustered_table_writes_no_sbs_vcf(self, tmp_path):
+        rows = {"class1a": [_row("S1", "1", "10", "A", "C")]}
+        _setup_snv(tmp_path, rows, [])
+        convertFiles(str(tmp_path), "96", PROJECT, True)
+        assert os.listdir(str(tmp_path / "output" / "nonClustered" / "SBS")) == []
+        assert os.listdir(str(tmp_path / "output" / "clustered" / "DBS")) == ["S1.vcf"]
 
     def test_multiple_samples_in_one_subclass(self, tmp_path):
         rows = {

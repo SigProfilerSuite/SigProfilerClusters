@@ -26,9 +26,14 @@ from . import plottingFunctions
 from SigProfilerMatrixGenerator.scripts import MutationMatrixGenerator as matRef
 from . import convertToVCF
 import random
+import warnings
 import pandas as pd
 import bisect
 import seaborn as sns
+
+
+# Seed used to choose the simulations of eventProbability (audit finding 11)
+EVENT_PROBABILITY_SEED = 0
 
 
 def distance_multiple_files_sims(
@@ -360,6 +365,22 @@ def distance_one_file(
             lines = [line.strip().split() for line in f]
         original_lines = sorted(lines, key=lambda x: (x[0], int(x[2])))
 
+        # Audit finding 7: several alleles at one position of a sample (multi-allelic sites or
+        # duplicated records) are one site for the IMD. The IMD is computed between distinct
+        # sites and every allele of a site keeps the distance of its site; before, each allele
+        # got an IMD of 0, which hid its distance to the neighbors and made the rows disappear.
+        site_rows = {}
+        for line in original_lines:
+            site_rows.setdefault((line[0], line[2]), []).append(line)
+        original_lines = [rows[0] for rows in site_rows.values()]
+
+        def write_site(x, out_file):
+            """Write the row of a site once per allele found at that position."""
+            for allele in site_rows[(x[1], x[3])]:
+                row = list(x)
+                row[4], row[5] = allele[3], allele[4]
+                print("\t".join([str(y) for y in row]), file=out_file)
+
         # Ensure there are at least two mutations present for a given chromosome
         if len(original_lines) > 1:
             centro_start = centromeres[genome][original_lines[0][1]][
@@ -451,7 +472,7 @@ def distance_one_file(
             )
             for x in final_distances_filtered:
                 if x[1] == sample:
-                    print("\t".join([str(y) for y in x]), file=out_file)
+                    write_site(x, out_file)
                 else:
                     out_file.close()
                     sample = x[1]
@@ -464,7 +485,7 @@ def distance_one_file(
                         "a",
                         10000000,
                     )
-                    print("\t".join([str(y) for y in x]), file=out_file)
+                    write_site(x, out_file)
             out_file.close()
 
         elif len(original_lines) == 1:
@@ -480,21 +501,31 @@ def distance_one_file(
 
             with open(out_file, "a", 10000000) as out_file:
                 # Add a new column with the value 1 million
-                original_lines[0].insert(0, 1000000)
-                for mutation in original_lines:
-                    print("\t".join([str(y) for y in mutation]), file=out_file)
+                # no neighbor: every allele of the site gets the singleton distance
+                for mutation in site_rows[(sample, original_lines[0][2])]:
+                    print("\t".join([str(y) for y in [1000000] + mutation]), file=out_file)
 
 
 def eventProbability(
     project, input_path, simulation_path, output_path_original, windowSize, k=10
 ):
+    # Audit finding 11: EVENT_PROBABILITY is a product of KDE density heights, not a probability.
+    warnings.warn(
+        "EVENT_PROBABILITY is an experimental score (a product of kernel density estimates "
+        "of the simulated mutations), not a probability; the model is under review.",
+        UserWarning,
+        stacklevel=2,
+    )
     windowSize *= 10
     subclasses = ["DBS", "MBS", "omikli", "kataegis", "other"]
 
-    samples = [x for x in os.listdir(simulation_path) if x[0] != "."]
+    samples = sorted(x for x in os.listdir(simulation_path) if x[0] != ".")
     for sample in samples:
         samplePath = os.path.join(simulation_path, sample)
-        simFiles = random.sample([x for x in os.listdir(samplePath) if x[0] != "."], k)
+        # A fixed seed over the sorted file names makes the choice of simulations reproducible
+        simFiles = random.Random(EVENT_PROBABILITY_SEED).sample(
+            sorted(x for x in os.listdir(samplePath) if x[0] != "."), k
+        )
         simIMDs = {}
 
         for sim in simFiles:
@@ -503,6 +534,7 @@ def eventProbability(
                 sep="\t",
                 header=None,
                 names=["IMD", "sample", "chrom", "pos", "ref", "alt", "plotIMD"],
+                dtype={"chrom": str},  # all-numeric names would be read as integers
             )
             chroms = list(set(muts["chrom"]))
             for chrom in chroms:
@@ -587,11 +619,14 @@ def eventProbability(
                     x.split("groupNumber")[1] for x in clusteredMuts["INFO"]
                 ]
 
-                for chrom in set(clusteredMuts["#CHROM"]):
+                for chrom in sorted(set(clusteredMuts["#CHROM"]), key=str):
                     currentClusteredMuts = clusteredMuts[
                         clusteredMuts["#CHROM"] == chrom
                     ]
-                    for event in set(currentClusteredMuts["EVENTS"]):
+                    for event in sorted(
+                        set(currentClusteredMuts["EVENTS"]),
+                        key=lambda e: (int(e) if str(e).strip().isdigit() else float("inf"), str(e)),
+                    ):
                         eventMuts = currentClusteredMuts[
                             currentClusteredMuts["EVENTS"] == event
                         ]
@@ -613,7 +648,6 @@ def eventProbability(
                         for i, x in eventMuts.iterrows():
                             x = list(x)[:-1] + [probs]
                             print("\t".join([str(y) for y in x]), file=out)
-                os.remove(subclassPath)
                 out.close()
 
 

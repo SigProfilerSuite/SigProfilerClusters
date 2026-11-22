@@ -1,14 +1,16 @@
 name: CI
 
+# Each commit is tested once: on push to dev. The PR dev -> master is tested
+# once when opened (later commits are covered by the push to dev). master is
+# not tested after the merge, and the sync PR/merge into dev is not retested.
 on:
   push:
     branches:
-      - master
       - dev
   pull_request:
     branches:
       - master
-      - dev
+    types: [opened, reopened]
 
 permissions:
   contents: read
@@ -61,12 +63,7 @@ jobs:
       run: |
         SigProfilerMatrixGenerator install GRCh37 --local_genome ${{ github.workspace }}/src/
     
-    - name: Run unit tests
+    - name: Run unit and integration tests
       run: |
-        pip install pytest
         pytest -s -rw tests
-    
-    - name: Run integration test
-      run: |
-        python3 test.py
   

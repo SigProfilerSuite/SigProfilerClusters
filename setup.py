@@ -1,5 +1,6 @@
 from setuptools import setup, find_packages
 import os
+import re
 import shutil
 
 
@@ -17,29 +18,18 @@ def readme():
     # 	return(f.read())
 
 
-VERSION = "1.2.4"
+def read_version():
+    """The version lives only in SigProfilerClusters/version.py (the file that
+    sp-release/bump_version.py updates); setup.py never rewrites it."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SigProfilerClusters", "version.py")
+    with open(path) as f:
+        match = re.search(r"^short_version\s*=\s*['\"]([^'\"]+)['\"]", f.read(), re.M)
+    if match is None:
+        raise RuntimeError("short_version not found in " + path)
+    return match.group(1)
 
 
-def write_version_py(filename="SigProfilerClusters/version.py"):
-    # Copied from numpy setup.py
-    cnt = """
-# THIS FILE IS GENERATED FROM SIGPROFILECLUSTERS SETUP.PY
-short_version = '%(version)s'
-version = '%(version)s'
-Update = 'v1.2.2: Updates to variant_caller parameter and plotting improvements'
-	
-	"""
-    fh = open(filename, "w")
-    fh.write(
-        cnt
-        % {
-            "version": VERSION,
-        }
-    )
-    fh.close()
-
-
-write_version_py()
+VERSION = read_version()
 
 setup(
     name="SigProfilerClusters",
@@ -71,5 +61,6 @@ setup(
             "SigProfilerClusters=SigProfilerClusters.sigprofilerclusters_cli:main_function",
         ],
     },
+    extras_require={"tests": ["pytest"]},
     zip_safe=False,
 )
