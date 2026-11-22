@@ -12,6 +12,7 @@ from SigProfilerClusters.hotspot import (
     catch,
     cutoffCatch,
     densityCorrectionOriginal,
+    enrichment_p_value,
     flatten,
     moving_density,
     z_test,
@@ -49,6 +50,36 @@ class TestZTest:
         z, p = z_test(np.array([12.0, 10.0]), np.array([10.0, 10.0]), np.array([2.0, 2.0]))
         assert list(z) == [1.0, 0.0]
         assert len(p) == 2
+
+
+# ─── enrichment_p_value ──────────────────────────────────────
+
+
+class TestEnrichmentPValue:
+    def test_excess_gives_a_small_p_value(self):
+        assert enrichment_p_value(14, 10, 2) == pytest.approx(0.0228, abs=1e-4)
+
+    def test_observed_equal_to_expected_is_one_half(self):
+        assert enrichment_p_value(10, 10, 2) == pytest.approx(0.5)
+
+    def test_deficit_is_never_significant_and_never_above_one(self):
+        # z_test gives about 2 for z = -2: the enrichment p-value is at most 1
+        for observed in (8, 5, 0):
+            assert 0.5 < enrichment_p_value(observed, 10, 2) <= 1
+        assert z_test(8, 10, 2)[1] > 1
+
+    def test_p_value_decreases_with_a_larger_excess(self):
+        assert enrichment_p_value(20, 10, 2) < enrichment_p_value(12, 10, 2)
+
+    def test_zero_sigma_with_an_excess(self):
+        assert enrichment_p_value(3, 0, 0) == 0.0
+
+    def test_zero_sigma_without_an_excess(self):
+        assert enrichment_p_value(0, 0, 0) == 1.0
+        assert enrichment_p_value(2, 5, 0) == 1.0
+
+    def test_numpy_scalar_inputs(self):
+        assert enrichment_p_value(np.int64(14), np.float64(10), np.float64(2)) == pytest.approx(0.0228, abs=1e-4)
 
 
 # ─── moving_density ──────────────────────────────────────────

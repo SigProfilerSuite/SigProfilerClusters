@@ -67,7 +67,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 - Add centromere coordinates for mm39 genome.
 
-## [1.2.0] - 2024-02-24
+## [1.2.0] - 2025-02-24
 
 ### Changed
 - Updated dependencies: Now requires **Pandas >= 2.0.0**, **NumPy >= 2.0.0**, and **Python >= 3.9**.

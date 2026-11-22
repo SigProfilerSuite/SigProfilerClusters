@@ -90,76 +90,76 @@ def convertFiles(input_path, contexts, project, correction):
         with open(idPath) as f:
             next(f)
             allLines = f.readlines()
-            if len(allLines) == 0:
-                pass
-            (
-                currentSample,
-                chrom,
-                pos,
-                ref,
-                alt,
-            ) = pullLineInfo(allLines[0], False)
-            out = open(
-                os.path.join(
-                    input_path, "output", "clustered", "ID", currentSample + ".vcf"
-                ),
-                "a",
-            )
-            print(
-                "\t".join(
-                    ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"]
-                ),
-                file=out,
-            )
-            print(
-                "\t".join(
-                    [chrom, pos, currentSample, ref, alt, ".", ".", "ClusteredAnalysis"]
-                ),
-                file=out,
-            )
-            for lines in allLines[1:]:
+            # An empty table has no mutations to convert: write no VCF for it
+            if len(allLines) > 0:
                 (
-                    sample,
+                    currentSample,
                     chrom,
                     pos,
                     ref,
                     alt,
-                ) = pullLineInfo(lines, False)
-                if sample != currentSample:
-                    out.close()
-                    currentSample = sample
-                    out = open(
-                        os.path.join(
-                            input_path,
-                            "output",
-                            "clustered",
-                            "ID",
-                            currentSample + ".vcf",
-                        ),
-                        "a",
-                    )
-                    print(
-                        "\t".join(
-                            [
-                                "#CHROM",
-                                "POS",
-                                "ID",
-                                "REF",
-                                "ALT",
-                                "QUAL",
-                                "FILTER",
-                                "INFO",
-                            ]
-                        ),
-                        file=out,
-                    )
+                ) = pullLineInfo(allLines[0], False)
+                out = open(
+                    os.path.join(
+                        input_path, "output", "clustered", "ID", currentSample + ".vcf"
+                    ),
+                    "a",
+                )
                 print(
                     "\t".join(
-                        [chrom, pos, sample, ref, alt, ".", ".", "ClusteredAnalysis"]
+                        ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"]
                     ),
                     file=out,
                 )
-        out.close()
+                print(
+                    "\t".join(
+                        [chrom, pos, currentSample, ref, alt, ".", ".", "ClusteredAnalysis"]
+                    ),
+                    file=out,
+                )
+                for lines in allLines[1:]:
+                    (
+                        sample,
+                        chrom,
+                        pos,
+                        ref,
+                        alt,
+                    ) = pullLineInfo(lines, False)
+                    if sample != currentSample:
+                        out.close()
+                        currentSample = sample
+                        out = open(
+                            os.path.join(
+                                input_path,
+                                "output",
+                                "clustered",
+                                "ID",
+                                currentSample + ".vcf",
+                            ),
+                            "a",
+                        )
+                        print(
+                            "\t".join(
+                                [
+                                    "#CHROM",
+                                    "POS",
+                                    "ID",
+                                    "REF",
+                                    "ALT",
+                                    "QUAL",
+                                    "FILTER",
+                                    "INFO",
+                                ]
+                            ),
+                            file=out,
+                        )
+                    print(
+                        "\t".join(
+                            [chrom, pos, sample, ref, alt, ".", ".", "ClusteredAnalysis"]
+                        ),
+                        file=out,
+                    )
+                out.close()
 
         if correction == True:
             nonClusteredFile = os.path.join(
@@ -182,62 +182,62 @@ def convertFiles(input_path, contexts, project, correction):
         with open(nonClusteredFile) as f:
             next(f)
             allLines = f.readlines()
-            if len(allLines) == 0:
-                pass
-            currentSample, chrom, pos, ref, alt = pullLineInfo(allLines[0], False)
-            out = open(
-                os.path.join(
-                    input_path, "output", "nonClustered", "ID", currentSample + ".vcf"
-                ),
-                "a",
-            )
-            print(
-                "\t".join(
-                    ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"]
-                ),
-                file=out,
-            )
-            print(
-                "\t".join(
-                    [chrom, pos, currentSample, ref, alt, ".", ".", "NonClustered"]
-                ),
-                file=out,
-            )
-            for lines in allLines[1:]:
-                sample, chrom, pos, ref, alt = pullLineInfo(lines, False)
-                if sample != currentSample:
-                    out.close()
-                    currentSample = sample
-                    out = open(
-                        os.path.join(
-                            input_path,
-                            "output",
-                            "nonClustered",
-                            "ID",
-                            currentSample + ".vcf",
-                        ),
-                        "a",
-                    )
-                    print(
-                        "\t".join(
-                            [
-                                "#CHROM",
-                                "POS",
-                                "ID",
-                                "REF",
-                                "ALT",
-                                "QUAL",
-                                "FILTER",
-                                "INFO",
-                            ]
-                        ),
-                        file=out,
-                    )
+            # An empty table has no mutations to convert: write no VCF for it
+            if len(allLines) > 0:
+                currentSample, chrom, pos, ref, alt = pullLineInfo(allLines[0], False)
+                out = open(
+                    os.path.join(
+                        input_path, "output", "nonClustered", "ID", currentSample + ".vcf"
+                    ),
+                    "a",
+                )
                 print(
-                    "\t".join([chrom, pos, sample, ref, alt, ".", ".", "NonClustered"]),
+                    "\t".join(
+                        ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"]
+                    ),
                     file=out,
                 )
-        out.close()
+                print(
+                    "\t".join(
+                        [chrom, pos, currentSample, ref, alt, ".", ".", "NonClustered"]
+                    ),
+                    file=out,
+                )
+                for lines in allLines[1:]:
+                    sample, chrom, pos, ref, alt = pullLineInfo(lines, False)
+                    if sample != currentSample:
+                        out.close()
+                        currentSample = sample
+                        out = open(
+                            os.path.join(
+                                input_path,
+                                "output",
+                                "nonClustered",
+                                "ID",
+                                currentSample + ".vcf",
+                            ),
+                            "a",
+                        )
+                        print(
+                            "\t".join(
+                                [
+                                    "#CHROM",
+                                    "POS",
+                                    "ID",
+                                    "REF",
+                                    "ALT",
+                                    "QUAL",
+                                    "FILTER",
+                                    "INFO",
+                                ]
+                            ),
+                            file=out,
+                        )
+                    print(
+                        "\t".join([chrom, pos, sample, ref, alt, ".", ".", "NonClustered"]),
+                        file=out,
+                    )
+                out.close()
 
     else:
         if correction == True:
@@ -366,59 +366,59 @@ def convertFiles(input_path, contexts, project, correction):
         with open(nonClusteredFile) as f:
             next(f)
             allLines = f.readlines()
-            if len(allLines) == 0:
-                pass
-            currentSample, chrom, pos, ref, alt = pullLineInfo(allLines[0], False)
-            out = open(
-                os.path.join(
-                    input_path, "output", "nonClustered", "SBS", currentSample + ".vcf"
-                ),
-                "a",
-            )
-            print(
-                "\t".join(
-                    ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"]
-                ),
-                file=out,
-            )
-            print(
-                "\t".join(
-                    [chrom, pos, currentSample, ref, alt, ".", ".", "NonClustered"]
-                ),
-                file=out,
-            )
-            for lines in allLines[1:]:
-                sample, chrom, pos, ref, alt = pullLineInfo(lines, False)
-                if sample != currentSample:
-                    out.close()
-                    currentSample = sample
-                    out = open(
-                        os.path.join(
-                            input_path,
-                            "output",
-                            "nonClustered",
-                            "SBS",
-                            currentSample + ".vcf",
-                        ),
-                        "a",
-                    )
-                    print(
-                        "\t".join(
-                            [
-                                "#CHROM",
-                                "POS",
-                                "ID",
-                                "REF",
-                                "ALT",
-                                "QUAL",
-                                "FILTER",
-                                "INFO",
-                            ]
-                        ),
-                        file=out,
-                    )
+            # An empty table has no mutations to convert: write no VCF for it
+            if len(allLines) > 0:
+                currentSample, chrom, pos, ref, alt = pullLineInfo(allLines[0], False)
+                out = open(
+                    os.path.join(
+                        input_path, "output", "nonClustered", "SBS", currentSample + ".vcf"
+                    ),
+                    "a",
+                )
                 print(
-                    "\t".join([chrom, pos, sample, ref, alt, ".", ".", "NonClustered"]),
+                    "\t".join(
+                        ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"]
+                    ),
                     file=out,
                 )
-        out.close()
+                print(
+                    "\t".join(
+                        [chrom, pos, currentSample, ref, alt, ".", ".", "NonClustered"]
+                    ),
+                    file=out,
+                )
+                for lines in allLines[1:]:
+                    sample, chrom, pos, ref, alt = pullLineInfo(lines, False)
+                    if sample != currentSample:
+                        out.close()
+                        currentSample = sample
+                        out = open(
+                            os.path.join(
+                                input_path,
+                                "output",
+                                "nonClustered",
+                                "SBS",
+                                currentSample + ".vcf",
+                            ),
+                            "a",
+                        )
+                        print(
+                            "\t".join(
+                                [
+                                    "#CHROM",
+                                    "POS",
+                                    "ID",
+                                    "REF",
+                                    "ALT",
+                                    "QUAL",
+                                    "FILTER",
+                                    "INFO",
+                                ]
+                            ),
+                            file=out,
+                        )
+                    print(
+                        "\t".join([chrom, pos, sample, ref, alt, ".", ".", "NonClustered"]),
+                        file=out,
+                    )
+                out.close()
