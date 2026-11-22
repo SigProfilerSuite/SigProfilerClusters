@@ -132,6 +132,32 @@ def run_analysis_for_variant_callers_separate_steps(
         print(f"Output matches reference for {caller}.")
 
 
+def rerun_subclassify(caller, base_path, genome):
+    """Audit finding 9: the subclassification can be repeated on the saved results, without
+    the hotspot analysis (it used to fail with an undefined variable). The table that it
+    writes must be the same as in the first run."""
+    input_path = os.path.join(base_path, "input_vcf_sim", caller) + os.sep
+    clustered_vaf = os.path.join(
+        input_path, "output", "vcf_files_corrected", f"{caller}_clustered",
+        f"{caller}_clustered_vaf.txt",
+    )
+    with open(clustered_vaf) as f:
+        first_run = f.read()
+    hp.analysis(
+        project=caller,
+        genome=genome,
+        contexts="96",
+        simContext=["96"],
+        input_path=input_path,
+        analysis="subClassify",
+        subClassify=True,
+        correction=True,
+        variant_caller=caller,
+    )
+    with open(clustered_vaf) as f:
+        assert f.read() == first_run, f"subClassify gave another table for {caller}"
+
+
 def run_one_genome_test(caller):
     # The data live next to this file, whatever the checkout directory is called
     base_path = os.path.dirname(os.path.abspath(__file__))
@@ -144,6 +170,7 @@ def run_one_genome_test(caller):
     run_analysis_for_variant_callers_separate_steps(
         [caller], base_path, genome, simulations
     )
+    rerun_subclassify(caller, base_path, genome)
     return True
 
 

@@ -27,6 +27,7 @@ from . import plottingFunctions
 from SigProfilerMatrixGenerator.scripts import MutationMatrixGenerator as matRef
 from . import convertToVCF
 import random
+import pickle
 import warnings
 import pandas as pd
 import bisect
@@ -652,6 +653,42 @@ def eventProbability(
                 out.close()
 
 
+def load_previous_analysis(project, ref_dir, contexts, correction, chrom_based):
+    """
+    Loads what a previous run of the hotspot analysis saved and the subclassification
+    needs (analysis="subClassify"): the dense regions and the corrected IMD cutoffs of every
+    sample. Without correction both are empty, as in a run that does not correct. Raises a
+    FileNotFoundError that lists every missing file before anything is loaded.
+    """
+    data = ref_dir + "output/simulations/data/"
+    suffix = "_chrom" if chrom_based else ""
+    required = [data + "imds" + suffix + ".pickle"]
+    if correction:
+        required += [
+            data + "imds_corrected" + suffix + ".pickle",
+            data + "regions_corrected" + suffix + ".pickle",
+        ]
+    if contexts != "ID":
+        vcf_dir = "output/vcf_files" + ("_corrected" if correction else "")
+        required.append(
+            ref_dir + vcf_dir + "/" + project + "_clustered/SNV/" + project + "_clustered.txt"
+        )
+    missing = [path for path in required if not os.path.exists(path)]
+    if missing:
+        raise FileNotFoundError(
+            'analysis="subClassify" needs the results of a previous run of the hotspot '
+            'analysis (run analysis="hotspot" or analysis="all" first). Missing files:\n  '
+            + "\n  ".join(missing)
+        )
+    if not correction:
+        return {}, {}
+    with open(data + "regions_corrected" + suffix + ".pickle", "rb") as handle:
+        regions = pickle.load(handle)
+    with open(data + "imds_corrected" + suffix + ".pickle", "rb") as handle:
+        imds = pickle.load(handle)
+    return regions, imds
+
+
 def analysis(
     project,
     genome,
@@ -999,6 +1036,13 @@ def analysis(
 
     if ref_dir[-1] != "/":  # Ensure a trailing backslash to the given path
         ref_dir += "/"
+
+    if analysis == "subClassify":
+        # Reuse the results of a previous run; fails now, before anything is deleted,
+        # if some of them is missing
+        regions, imds = load_previous_analysis(
+            project, ref_dir, contexts, correction, chrom_based
+        )
 
     path_suffix = ""
     if correction:
