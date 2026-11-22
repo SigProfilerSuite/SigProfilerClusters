@@ -33,6 +33,10 @@ import bisect
 import seaborn as sns
 
 
+# Values of output_type that analysis() accepts. None is what analysis="hotspot" and
+# analysis="subClassify" use internally to skip the calculation of the distances.
+SUPPORTED_OUTPUT_TYPES = ("all", None)
+
 # Seed used to choose the simulations of eventProbability (audit finding 11)
 EVENT_PROBABILITY_SEED = 0
 
@@ -689,7 +693,7 @@ def analysis(
                        contexts	->	the contexts used to calculate IMDs (string; ie "96")
                      simContext	->	the simulated context used for the background model (list of strings; ie ["6144"])
                      input_path	->	the directory for the given project. This should contain the output from SigProfilerMatrixGenerator/Simulator (string)
-                    output_type	->	optional parameter for specifying which type of files to calculate IMDs for (simulations, original, etc.; default='all')
+                    output_type	->	only 'all' is supported (the distances of the original samples and of the simulations are calculated together; default='all')
                        analysis	->	optional parameter for specifying which type of analysis to perform. Helpful for when the IMDs have already been calcuated. (i.e. "all", "hotspot", "all"; default="all")
               interdistance	->	the mutation types to calculate IMDs between (NOT STABLE; RECOMMENDED NOT TO USE; default='96')
              clustering_vaf	->	optional paramater to save the VAF from the original mutation files. Required if performing subclassification (default=False; switched to True if subclassify=True)
@@ -725,6 +729,14 @@ def analysis(
             subClassify=True. Note that the IMD plots do not have the resolution to show the corrected IMDs if correction=True. The corrected mutations are shown in the SBS96, but the
             distances are not used in the histogram.
     """
+    if output_type not in SUPPORTED_OUTPUT_TYPES:
+        raise ValueError(
+            f"output_type {output_type!r} is not supported; valid values: "
+            + ", ".join(repr(x) for x in SUPPORTED_OUTPUT_TYPES)
+            + " (the distances of the original samples and of the simulations are "
+            "always calculated together)"
+        )
+
     if includedCCFs:
         includedVAFs = False
 
@@ -1236,12 +1248,7 @@ def analysis(
     # saves time if the downstream analysis needs to be rerun.
     if output_type != None:
         print("Calculating mutational distances...", end="", flush=True)
-    if output_type == "original":
-        distance_one_file(
-            original_samples, output_path_original, file_context2, genome, centromeres
-        )
-
-    elif output_type == "all":
+    if output_type == "all":
         # Remove old path iterations if they exist
         if os.path.exists(output_path):
             shutil.rmtree(output_path)
@@ -1325,21 +1332,6 @@ def analysis(
                 # Raises an error when not successful
                 r.get()
 
-    elif output_type == "simulations":
-        if os.path.exists(output_path):
-            shutil.rmtree(output_path)
-        distance_multiple_files_sims(
-            output_path,
-            simulation_path,
-            simulation_path_sorted,
-            file_context2,
-            genome,
-            centromeres,
-            sortSims,
-        )
-    # elif :
-    # 	print("Output type is not a valid option.")
-    # 	sys.exit()
     if output_type != None:
         print("Completed!", flush=True)  # IMD calculations have successfully completed.
 

@@ -27,7 +27,7 @@ def parse_arguments_clusters(args: List[str], description: str) -> argparse.Name
     parser.add_argument("input_path", help="Path to input directory")
 
     # Opcionales
-    parser.add_argument("--output_type", default="all")
+    parser.add_argument("--output_type", default="all", choices=["all"])
     parser.add_argument("--analysis", default="all")
     parser.add_argument("--interdistance", default="96")
     parser.add_argument("--exome", type=str2bool, nargs="?", const=True, default=False)
