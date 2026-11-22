@@ -1,7 +1,14 @@
 import os
+import random
+
+import numpy as np
 import pytest
 from SigProfilerSimulator import SigProfilerSimulator as sigSim
 from SigProfilerClusters import SigProfilerClusters as hp
+
+
+# With this seed the three example inputs get mutations repeated on three chromosomes
+SIMULATION_SEED = 11
 
 
 def chrom_sort_key(line):
@@ -66,6 +73,13 @@ def run_analysis_for_variant_callers_separate_steps(
             input_path += os.sep
         assert os.path.exists(input_path), f"Input path does not exist for {caller}: {input_path}"
         seed_file_path = os.path.join(base_path, "seeds_file", "Simulator_seeds.txt")
+
+        # SigProfilerSimulator distributes the mutations over the chromosomes with the global
+        # random and numpy generators, not with the seed file. Unseeded, some draws put every
+        # mutation on a different chromosome: no simulation has an adjacent pair, there are no
+        # IMDs and the analysis fails (audit register, finding 114). Seeding makes it reproducible.
+        random.seed(SIMULATION_SEED)
+        np.random.seed(SIMULATION_SEED)
 
         # Run SigProfilerSimulator
         print(f"Running SigProfilerSimulator for {caller}...")

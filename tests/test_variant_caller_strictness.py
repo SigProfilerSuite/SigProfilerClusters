@@ -4,6 +4,9 @@ by fakes that write a chosen output, so no genome is needed.
 Run with: pytest tests/test_variant_caller_strictness.py -v
 """
 
+import random
+
+import numpy as np
 import pytest
 
 import test_variant_caller as tvc
@@ -83,3 +86,33 @@ class TestStrictness:
         monkeypatch.setattr(tvc, "run_analysis_for_variant_callers_separate_steps", failing)
         with pytest.raises(AssertionError, match="output differs"):
             tvc.run_one_genome_test(CALLER)
+
+
+class TestSimulationSeed:
+    """The simulator draws the distribution of mutations over chromosomes from the global
+    generators; they are seeded before every simulator call (audit register, finding 114)."""
+
+    def _draws_seen_by_the_simulator(self, layout, monkeypatch, state):
+        seen = []
+
+        def simulator(**kwargs):
+            seen.append((random.random(), float(np.random.random())))
+
+        monkeypatch.setattr(tvc.sigSim, "SigProfilerSimulator", simulator)
+        monkeypatch.setattr(tvc.hp, "analysis", lambda **kwargs: None)
+        random.seed(state)
+        np.random.seed(state)
+        with pytest.raises(AssertionError):  # no output is generated: only the simulator call matters
+            _run(layout)
+        return seen[0]
+
+    def test_the_simulator_sees_the_same_draws_whatever_the_previous_state(self, layout, monkeypatch):
+        first = self._draws_seen_by_the_simulator(layout, monkeypatch, 1)
+        second = self._draws_seen_by_the_simulator(layout, monkeypatch, 2)
+        assert first == second
+
+    def test_the_draws_come_from_the_documented_seed(self, layout, monkeypatch):
+        seen = self._draws_seen_by_the_simulator(layout, monkeypatch, 5)
+        random.seed(tvc.SIMULATION_SEED)
+        np.random.seed(tvc.SIMULATION_SEED)
+        assert seen == (random.random(), float(np.random.random()))
