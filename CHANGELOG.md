@@ -6,6 +6,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-11-22
+
+### Changed
+
+- test: add unit tests for findClustersOfClusters_noVAF
+
+- test: add unit tests for findClustersOfClusters with VAF
+
+- test: add unit tests for pullCCF and pullVaf
+
+- test: cover density correction in findClustersOfClusters
+
+- test: cover re-segmentation of mixed-VAF events
+
+- test: add unit tests for first_run IMD cutoff and clustered split
+
+- test: add unit tests for densityCorrection and getResults
+
+- test: add unit tests for the IMD histogram plotting helpers
+
+- test: add unit tests for the IMD calculation of samples and simulations
+
+- test: add unit tests for eventProbability
+
+- test: cover the chrom_based guard of analysis
+
+- test: add unit tests for the SBS96 and ID83 catalog plots
+
+- test: add unit tests for calculateSampleIMDs
+
+- test: add unit tests for the ID rainfall plots
+
+- test: cover BED ranges and chromosome lengths in rainfall
+
+- docs: align the documented defaults and VAF formats with the code
+
+- build: make version.py the single version source and fix the changelog date
+
+- test: make the variant-caller integration test fail on any mismatch
+
+- test: add frozen golden tests for the IMD cutoff and clustered calls
+
+
+### Fixed
+
+- fix(convertToVCF): skip empty tables instead of raising IndexError
+
+- fix(hotspot): start the sample IMD cutoff scan at the first observed bin
+
+- fix(distance): compute the IMD between distinct sites so same-position mutations are kept
+
+- fix(probability): make eventProbability robust, reproducible and non-destructive
+
 ## [1.2.4] - 2026-11-21
 
 ### Changed
