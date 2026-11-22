@@ -227,6 +227,42 @@ class TestVafResegmentation:
         assert _positions(clustered, "class1c") == [1050, 1100]
 
 
+NAN = float("nan")
+
+
+class TestUnknownVaf:
+    """A missing VAF is stored as NaN and is not compared (audit finding 6): it never makes an
+    event discordant or concordant, and the known VAFs are compared consecutively."""
+
+    def test_a_pair_without_vaf_is_still_an_event(self, tmp_path):
+        clustered = _run(tmp_path, [_vrow(1000, NAN), _vrow(1001, NAN)])
+        assert _populated(clustered) == ["class1", "class1a"]
+
+    def test_an_unknown_vaf_next_to_a_known_one_does_not_declassify_the_event(self, tmp_path):
+        clustered = _run(tmp_path, [_vrow(1000, 0.4), _vrow(1001, NAN)])
+        assert _populated(clustered) == ["class1", "class1a"]
+
+    def test_an_unknown_vaf_inside_a_class2_event_keeps_it_whole(self, tmp_path):
+        rows = [_vrow(1000, 0.4), _vrow(1050, 0.4), _vrow(1100, NAN), _vrow(1150, 0.4)]
+        assert _positions(_run(tmp_path, rows), "class2") == [1000, 1050, 1100, 1150]
+
+    def test_an_unknown_vaf_does_not_hide_the_discordance_of_its_neighbours(self, tmp_path):
+        rows = [_vrow(1000, 0.2), _vrow(1001, NAN), _vrow(1002, 0.8)]
+        clustered = _run(tmp_path, rows)
+        assert _entries(clustered, "class1b") == []
+        # the unknown one stays with the first, the discordant one is left out of the event
+        assert _positions(clustered, "class1a") == [1000, 1001]
+        assert _positions(clustered, "class3") == [1002]
+
+    def test_discordant_known_vafs_still_declassify_with_an_unknown_one_present(self, tmp_path):
+        rows = [_vrow(1000, 0.2), _vrow(1001, 0.6), _vrow(1002, NAN)]
+        assert _entries(_run(tmp_path, rows), "class1b") == []
+
+    def test_unknown_vaf_is_written_as_nan(self, tmp_path):
+        clustered = _run(tmp_path, [_vrow(1000, NAN), _vrow(1001, NAN)])
+        assert [cols[VAF_COL] for cols in _entries(clustered, "class1a")] == ["nan", "nan"]
+
+
 # ─── grouping of mutations into events ───────────────────────
 
 
