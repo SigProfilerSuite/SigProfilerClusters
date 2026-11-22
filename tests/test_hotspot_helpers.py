@@ -220,9 +220,12 @@ class TestCutoffCatch:
         x = [10, "s1", "1", 10]
         assert cutoffCatch(x, imds, self.regions, 0, 100, self.chroms, 1_000_000) is True
 
-    def test_position_beyond_window_size_is_never_clustered(self):
+    def test_corrected_cutoff_applies_beyond_the_first_window(self):
+        # audit finding 2: the cumulative position is not compared with windowSize
         imds = {"s1": {0: 20}}
         x = [1, "s1", "1", 2_000_000]
+        assert cutoffCatch(x, imds, self.regions, 0, 100, self.chroms, 1_000_000) is True
+        x = [30, "s1", "1", 2_000_000]
         assert cutoffCatch(x, imds, self.regions, 0, 100, self.chroms, 1_000_000) is False
 
     def test_distance_equal_to_cut_is_not_clustered(self):

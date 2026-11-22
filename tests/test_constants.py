@@ -34,7 +34,6 @@ class TestValues:
             ("DENSITY_FOLD_CHANGE", 1.25),
             ("DENSITY_MIN_MUTATIONS", 50),
             ("DENSITY_PEAK_THRESHOLD", 9.0),
-            ("DENSITY_SIMULATIONS", 10),
             ("EVENT_PROBABILITY_FLOOR", 1e-05),
         ],
     )

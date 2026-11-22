@@ -813,10 +813,7 @@ def cutoffCatch(
         if regions[bisectPos] not in imds_corrected[x[1]]:
             return int(x[0]) < distance_cut
         else:
-            if int(x[3]) + chroms[x[2]] < windowSize:
-                return int(x[0]) < imds_corrected[x[1]][regions[bisectPos]]
-            else:
-                return False
+            return int(x[0]) < imds_corrected[x[1]][regions[bisectPos]]
 
 
 def densityCorrectionOriginal(densityMuts, densityMutsSim, binsDensity):
@@ -883,60 +880,35 @@ def densityCorrection(densityMuts, densityMutsSim, windowSize):
     Returns:
        correctionFolds	->	the cumulative genomic position of regions that have a higher mutation density than what is expected by chance (list)
     """
-    sims = random.sample(list(densityMutsSim.keys()), constants.DENSITY_SIMULATIONS)
-    densityMutsSimSample = {x: densityMutsSim[x] for x in sims}
-
     threshold = constants.DENSITY_PEAK_THRESHOLD
-    try:
-        maxDistance = (
-            max(
-                max(densityMuts),
-                max([int(densityMutsSimSample[x][-1]) for x in densityMutsSimSample]),
-            )
-            + windowSize
-        )
-    except:
-        if len(densityMuts) == 0:
-            maxDistance = (
-                max([int(densityMutsSimSample[x][-1]) for x in densityMutsSimSample])
-                + windowSize
-            )
-        else:
-            maxDistance = max(densityMuts) + windowSize
-    # maxDistance = max(max(densityMuts), max([int(densityMutsSim[x][-1]) for x in densityMutsSim])) + windowSize
-    simDensities = []
-    simWindowParitions = []
     slideSize = windowSize
-    imdsProbabilities = []
-    for x in densityMutsSimSample:
-        currentWindow = 0
-        densities = []
-        while currentWindow < maxDistance:
-            currentMuts = moving_density(
-                densityMutsSimSample[x], currentWindow, currentWindow + slideSize
-            )
-            densities.append(len(currentMuts))
-            simWindowParitions.append(currentMuts)
+    observed = np.sort(np.asarray([int(x) for x in densityMuts], dtype=np.int64))
+    simulated = [
+        np.sort(np.asarray([int(x) for x in positions], dtype=np.int64))
+        for positions in densityMutsSim.values()
+    ]
+    if len(observed) == 0 or all(len(sim) == 0 for sim in simulated):
+        return []
+    lastPosition = max(
+        [int(observed[-1])] + [int(sim[-1]) for sim in simulated if len(sim) > 0]
+    )
+    # number of windows needed to cover every position
+    nWindows = lastPosition // slideSize + 1
+    edges = np.arange(nWindows + 1) * slideSize
 
-            currentWindow += slideSize
-        simDensities.append(densities)
+    def counts(positions):
+        return np.histogram(positions, bins=edges)[0]
 
-    finalSimDensities = np.mean(simDensities, axis=0)
+    # expected density: mean over ALL simulations (empty windows count as 1)
+    finalSimDensities = np.mean([counts(sim) for sim in simulated], axis=0)
     finalSimDensities[finalSimDensities == 0] = 1
 
-    densities = []
-    currentWindow = 0
-
-    while currentWindow < maxDistance:
-        currentMuts = moving_density(
-            densityMutsSimSample[x], currentWindow, currentWindow + slideSize
-        )
-        densities.append(len(currentMuts))
-        currentWindow += slideSize
-
-    foldChanges = densities / finalSimDensities
-    peaks, heights = find_peaks([0] + foldChanges + [0], threshold)
-    regions = [slideSize * (x - 1) for x in peaks]
+    foldChanges = counts(observed) / finalSimDensities
+    # padded with zeros so a peak in the first or last window is found; peak i of the
+    # padded array is window i - 1, whose RIGHT edge is slideSize * i (callers compare
+    # edge - position < windowSize)
+    peaks, heights = find_peaks(np.concatenate(([0], foldChanges, [0])), threshold)
+    regions = [int(slideSize * x) for x in peaks]
     return regions
 
 

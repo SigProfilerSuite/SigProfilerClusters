@@ -206,11 +206,6 @@ class TestSuspectedProblems:
         clustered = _run(tmp_path, variant, rows, DENSE, _dense(5000))
         assert _positions(clustered, "class1c") == []
 
-    @pytest.mark.xfail(
-        reason="to verify: cutoffCatch compares the cumulative genomic position with "
-        "windowSize, so the corrected cutoff is only applied in the first window of the genome",
-        strict=True,
-    )
     def test_corrected_cutoff_applies_beyond_the_first_window(self, tmp_path, variant):
         rows = [
             _mutation(variant, 2_000_000),

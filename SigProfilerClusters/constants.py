@@ -44,9 +44,6 @@ DENSITY_MIN_MUTATIONS = 50
 DENSITY_PEAK_THRESHOLD = 9.0
 """Peak height used by densityCorrection to find dense windows."""
 
-DENSITY_SIMULATIONS = 10
-"""Number of simulations sampled by densityCorrection."""
-
 # Event probability (SigProfilerClusters.eventProbability)
 EVENT_PROBABILITY_FLOOR = 1e-05
 """Smallest score written to the EVENT_PROBABILITY column."""
