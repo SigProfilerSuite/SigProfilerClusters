@@ -140,8 +140,9 @@ RERUN_SUBCLASSIFY_CALLER = "standard"
 def rerun_subclassify(caller, base_path, genome):
     """Audit finding 9: the subclassification can be repeated on the saved results, without
     the hotspot analysis (it used to fail with an undefined variable). The table that it
-    writes must be the same as in the first run."""
-    input_path = os.path.join(base_path, "input_vcf_sim", caller) + os.sep
+    writes must be the same as in the first run. The path has no trailing slash."""
+    # Without the trailing slash (audit finding 10)
+    input_path = os.path.join(base_path, "input_vcf_sim", caller)
     clustered_vaf = os.path.join(
         input_path, "output", "vcf_files_corrected", f"{caller}_clustered",
         f"{caller}_clustered_vaf.txt",

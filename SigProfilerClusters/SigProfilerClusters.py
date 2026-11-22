@@ -1421,14 +1421,14 @@ def analysis(
             print("Beginning subclassification of clustered mutations...", end="")
             if includedVAFs:
                 classifyFunctions.pullVaf(
-                    project, input_path, variant_caller, tumor_vaf_column, vaf_field, correction
+                    project, ref_dir, variant_caller, tumor_vaf_column, vaf_field, correction
                 )
                 sys.stderr.close()
                 sys.stderr = open(error_file, "a")
                 classifyFunctions.findClustersOfClusters(
                     project,
                     chrom_based,
-                    input_path,
+                    ref_dir,
                     windowSize,
                     chromLengths,
                     regions,
@@ -1441,13 +1441,13 @@ def analysis(
                 )
                 sys.stderr.close()
             elif includedCCFs:
-                classifyFunctions.pullCCF(project, input_path, correction)
+                classifyFunctions.pullCCF(project, ref_dir, correction)
                 sys.stderr.close()
                 sys.stderr = open(error_file, "a")
                 classifyFunctions.findClustersOfClusters(
                     project,
                     chrom_based,
-                    input_path,
+                    ref_dir,
                     windowSize,
                     chromLengths,
                     regions,
@@ -1463,7 +1463,7 @@ def analysis(
                 classifyFunctions.findClustersOfClusters_noVAF(
                     project,
                     chrom_based,
-                    input_path,
+                    ref_dir,
                     windowSize,
                     chromLengths,
                     regions,
@@ -1483,7 +1483,7 @@ def analysis(
             plottingFunctions.rainfall(
                 chrom_based,
                 project,
-                input_path,
+                ref_dir,
                 chrom_path,
                 chromLengths,
                 centromeres,
@@ -1498,8 +1498,8 @@ def analysis(
             print("Subclassification of clustered mutations has finished!")
 
         # Generates output paths for final results saved as VCF files
-        convertToVCF.generateAllPaths(input_path, contexts)
-        convertToVCF.convertFiles(input_path, contexts, project, correction)
+        convertToVCF.generateAllPaths(ref_dir, contexts)
+        convertToVCF.convertFiles(ref_dir, contexts, project, correction)
 
         # Add probability to all clustered mutations using same window sized-bins
         if probability:
@@ -1510,7 +1510,7 @@ def analysis(
                 flush=True,
             )
             eventProbability(
-                project, input_path, output_path, output_path_original, windowSize, k=10
+                project, ref_dir, output_path, output_path_original, windowSize, k=10
             )
             print("done")
 
