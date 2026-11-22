@@ -10,6 +10,7 @@ import pytest
 
 from SigProfilerClusters.hotspot import (
     catch,
+    central_interval,
     cutoffCatch,
     densityCorrectionOriginal,
     enrichment_p_value,
@@ -80,6 +81,40 @@ class TestEnrichmentPValue:
 
     def test_numpy_scalar_inputs(self):
         assert enrichment_p_value(np.int64(14), np.float64(10), np.float64(2)) == pytest.approx(0.0228, abs=1e-4)
+
+
+# ─── central_interval ────────────────────────────────────────
+
+
+class TestCentralInterval:
+    def test_hundred_simulations_give_the_3rd_and_98th_smallest(self):
+        assert central_interval(list(range(100))) == (2, 97)
+
+    def test_twenty_simulations_give_the_extremes(self):
+        assert central_interval(list(range(20))) == (0, 19)
+
+    def test_order_of_the_values_does_not_matter(self):
+        values = [5, 90, 1, 44, 73, 12, 60] * 15
+        assert central_interval(values) == central_interval(sorted(values, reverse=True))
+
+    def test_limits_are_observed_values(self):
+        values = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90] * 10
+        lower, upper = central_interval(values)
+        assert lower in values and upper in values
+
+    def test_lower_never_exceeds_upper(self):
+        assert central_interval([7] * 30) == (7, 7)
+        lower, upper = central_interval([1, 2, 3])
+        assert lower <= upper
+
+    def test_it_is_wider_than_the_5th_95th_interval_it_replaces(self):
+        values = list(range(100))
+        old_lower, old_upper = sorted(values)[-95], sorted(values)[94]  # what the code used to report
+        lower, upper = central_interval(values)
+        assert lower < old_lower and upper > old_upper
+
+    def test_level_is_a_parameter(self):
+        assert central_interval(list(range(100)), level=0.90) == (4, 95)
 
 
 # ─── moving_density ──────────────────────────────────────────

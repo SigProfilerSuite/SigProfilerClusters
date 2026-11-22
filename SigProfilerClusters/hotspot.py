@@ -77,6 +77,33 @@ def enrichment_p_value(observed, expected, sigma):
     return 1 - norm.cdf((observed - expected) / sigma)
 
 
+# Fraction of the simulations that the reported interval contains (audit finding 20)
+INTERVAL_LEVEL = 0.95
+
+
+def central_interval(values, level=INTERVAL_LEVEL):
+    """
+    Lower and upper limits of the central `level` of a set of simulated counts.
+
+    The limits are observed values (no interpolation): the lower one is the value at the
+    (1 - level) / 2 quantile rounded down and the upper one the value at the
+    (1 + level) / 2 quantile rounded up. For 100 simulations and level 0.95 they are the
+    3rd smallest and the 98th smallest values. The code used to take the 6th and the 95th
+    (the 5th-95th percentile, a 90% interval) and called it a 95% interval.
+
+    Parameters:
+            values	->	simulated counts, one per simulation (list of numbers)
+             level	->	fraction of the simulations contained by the interval (float; default=0.95)
+
+    Returns:
+            lower, upper	->	the limits of the interval (numbers)
+    """
+    tail = (1 - level) / 2
+    lower = np.quantile(values, tail, method="lower")
+    upper = np.quantile(values, 1 - tail, method="higher")
+    return lower, upper
+
+
 def plot_clustered(orig_bins, sim_bins, bincenters2, panel4, lower_CI, upper_CI):
     """
     Plots the histogram of IMDs in the middle right-hand column of the intradistance plots for
@@ -379,8 +406,7 @@ def refineIMD(
         avgSim = np.mean(total_bin_counts, axis=0)
         stdevSim = np.std(total_bin_counts, axis=0)
         total_bin_counts.sort()
-        upperCI = total_bin_counts[CI - 1][0]
-        lowerCI = total_bin_counts[-CI][0]
+        lowerCI, upperCI = central_interval([row[0] for row in total_bin_counts])
         z, p = z_test(ys, avgSim, stdevSim)
         q_vals = sm.fdrcorrection(p)[1]
 
@@ -491,7 +517,7 @@ def first_run(
     mean_counts_cum = []
     std_dev_cum = []
 
-    CI = int(round(0.95 * sim_count, 0))
+    CI = int(round(0.95 * sim_count, 0))  # kept for refineIMD's signature; the interval uses central_interval
 
     for i in range(0, len(total_bin_counts[0]), 1):
         count = 0
@@ -506,8 +532,9 @@ def first_run(
         std_dev.append(stdev([int(x) for x in bin_std_dev]))
         mean_counts.append(mean(bin_std_dev))
         avg_bin_counts.append(int(round(median(bin_std_dev), 0)))
-        upper_CI.append(bin_std_dev[CI - 1])
-        lower_CI.append(bin_std_dev[-CI])
+        interval_lower, interval_upper = central_interval(bin_std_dev)
+        upper_CI.append(interval_upper)
+        lower_CI.append(interval_lower)
 
         bin_std_dev_cum.sort()
         std_dev_cum.append(stdev([int(x) for x in bin_std_dev_cum]))
