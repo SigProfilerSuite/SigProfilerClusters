@@ -132,6 +132,11 @@ def run_analysis_for_variant_callers_separate_steps(
         print(f"Output matches reference for {caller}.")
 
 
+# The reload of the saved results does not depend on the variant caller (each caller's VAF
+# reading is covered by the main run), so one of them is enough.
+RERUN_SUBCLASSIFY_CALLER = "standard"
+
+
 def rerun_subclassify(caller, base_path, genome):
     """Audit finding 9: the subclassification can be repeated on the saved results, without
     the hotspot analysis (it used to fail with an undefined variable). The table that it
@@ -170,7 +175,8 @@ def run_one_genome_test(caller):
     run_analysis_for_variant_callers_separate_steps(
         [caller], base_path, genome, simulations
     )
-    rerun_subclassify(caller, base_path, genome)
+    if caller == RERUN_SUBCLASSIFY_CALLER:
+        rerun_subclassify(caller, base_path, genome)
     return True
 
 
