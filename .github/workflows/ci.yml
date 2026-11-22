@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        python-version: ['3.9', '3.14']
+        python-version: ['3.11', '3.14']
     
     steps:
     - uses: actions/checkout@v6
@@ -67,3 +67,18 @@ jobs:
       run: |
         pytest -s -rw tests
   
+
+  # The declared lower bounds must resolve to a consistent environment on the oldest supported Python
+  minimum-dependencies:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+
+    - name: Resolve the minimum environment
+      run: |
+        python .github/scripts/minimum_environment.py

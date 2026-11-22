@@ -11,7 +11,7 @@ This section will help you set up the necessary software and packages required t
 
 ## Prerequisites ##
 
-- [Python][1] version >= 3.9
+- [Python][1] version >= 3.11
 - [SigProfilerMatrixGenerator][2] with a downloaded reference genome (required to generate mutational matrices and simulations)
 - [SigProfilerSimulator][3] (required to generate the background model used for IMD threshold calculation)
 - Other dependencies are installed automatically during package installation
