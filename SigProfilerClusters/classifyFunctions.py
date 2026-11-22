@@ -20,6 +20,22 @@ import warnings
 UNKNOWN_VAF = float("nan")
 
 
+def _lookup_by_key(values, sample, lines, what):
+    """Value read from the input for one clustered mutation (chromosome, position, ref
+    and alt), looking for the chromosome with and without the 'chr' prefix. Raises a
+    KeyError that names the sample and the mutation when it is in neither form."""
+    fields = [lines[6], lines[8], lines[9]]
+    per_sample = values.get(sample, {})
+    for chrom in (lines[5], "chr" + lines[5]):
+        key = ":".join([chrom] + fields)
+        if key in per_sample:
+            return per_sample[key]
+    raise KeyError(
+        f"no {what} read from the input for the mutation {':'.join([lines[5]] + fields)} "
+        f"of sample {sample}"
+    )
+
+
 def has_class2_pattern(distances_above_one, event_size):
     """True when a clustered event with this many distances above 1 between consecutive
     mutations cannot be a DBS or MBS: more than one such distance, or a single one in an
@@ -393,13 +409,7 @@ def pullCCF(project, project_path, correction=True):
         for lines in f:
             lines = lines.strip().split()
             sample = lines[1]
-            newKey = ":".join([lines[5], lines[6], lines[8], lines[9]])
-
-            try:
-                ccf = ccfs[sample][newKey]
-            except:
-                newKey = ":".join(["chr" + lines[5], lines[6], lines[8], lines[9]])
-                ccf = ccfs[sample][newKey]
+            ccf = _lookup_by_key(ccfs, sample, lines, "CCF")
             lines.append(str(ccf))
             total[sample] = total.get(sample, 0) + 1
             if ccf != ccf:
@@ -587,13 +597,7 @@ def pullVaf(project, project_path, variant_caller="standard", tumor_vaf_column=1
         for lines in f:
             lines = lines.strip().split()
             sample = lines[1]
-            newKey = ":".join([lines[5], lines[6], lines[8], lines[9]])
-
-            try:
-                vaf = vafs[sample][newKey]
-            except:
-                newKey = ":".join(["chr" + lines[5], lines[6], lines[8], lines[9]])
-                vaf = vafs[sample][newKey]
+            vaf = _lookup_by_key(vafs, sample, lines, "VAF")
             lines.append(str(vaf))
             total[sample] = total.get(sample, 0) + 1
             if vaf != vaf:
@@ -1228,50 +1232,38 @@ def findClustersOfClusters(
                         else:
                             if writeClassI:
                                 # Writes Class I (Single Events)
-                                try:
-                                    for i in range(0, len(lines), 1):
-                                        lines[i].append("ClassI")
-                                        print(
-                                            "\t".join([x for x in lines[i]]), file=out3
-                                        )
-                                except:
-                                    print(lines)
+                                for i in range(0, len(lines), 1):
+                                    lines[i].append("ClassI")
+                                    print(
+                                        "\t".join([x for x in lines[i]]), file=out3
+                                    )
 
                                 if writeClassIc:
                                     # Writes Class Ic (Omiklis)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIC"
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out8,
-                                            )
-                                    except:
-                                        print(lines)
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIC"
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out8,
+                                        )
                                 elif writeClassIa:
                                     # Writes Class Ia (DBSs)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIA"
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIA"
 
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out6,
-                                            )
-                                    except:
-                                        print(lines)
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out6,
+                                        )
                                 elif writeClassIb:
                                     # Writes Class 1b (MBSs)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIB"
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIB"
 
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out7,
-                                            )
-                                    except:
-                                        print(lines)
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out7,
+                                        )
                             elif writeClassIII:
                                 # Writes Class III (all other mutations - leftovers)
 
@@ -1563,109 +1555,91 @@ def findClustersOfClusters(
                                     else:
                                         if writeClassI:
                                             # Writes Class I (Single Events)
-                                            try:
-                                                for i in range(0, len(saveNewEvent), 1):
-                                                    saveNewEvent[i].append("ClassI")
-                                                    print(
-                                                        "\t".join(
-                                                            [x for x in saveNewEvent[i]]
-                                                        ),
-                                                        file=out3,
-                                                    )
+                                            for i in range(0, len(saveNewEvent), 1):
+                                                saveNewEvent[i].append("ClassI")
+                                                print(
+                                                    "\t".join(
+                                                        [x for x in saveNewEvent[i]]
+                                                    ),
+                                                    file=out3,
+                                                )
 
-                                            except:
-                                                print(saveNewEvent)
 
                                             if writeClassIc:
                                                 # Writes Class Ic (extended MBSs)
-                                                try:
-                                                    for i in range(0, len(saveNewEvent), 1):
-                                                        saveNewEvent[i][-1] = "ClassIC"
-                                                        print(
-                                                            "\t".join(
-                                                                [
-                                                                    x
-                                                                    for x in saveNewEvent[
-                                                                        i
-                                                                    ]
+                                                for i in range(0, len(saveNewEvent), 1):
+                                                    saveNewEvent[i][-1] = "ClassIC"
+                                                    print(
+                                                        "\t".join(
+                                                            [
+                                                                x
+                                                                for x in saveNewEvent[
+                                                                    i
                                                                 ]
-                                                            ),
-                                                            file=out8,
-                                                        )
-                                                except:
-                                                    print(saveNewEvent)
+                                                            ]
+                                                        ),
+                                                        file=out8,
+                                                    )
                                             elif writeClassIa:
                                                 # Writes Class Ia (DBSs)
-                                                try:
-                                                    for i in range(
-                                                        0, len(saveNewEvent), 1
-                                                    ):
-                                                        saveNewEvent[i][-1] = "ClassIA"
-                                                        print(
-                                                            "\t".join(
-                                                                [
-                                                                    x
-                                                                    for x in saveNewEvent[
-                                                                        i
-                                                                    ]
+                                                for i in range(
+                                                    0, len(saveNewEvent), 1
+                                                ):
+                                                    saveNewEvent[i][-1] = "ClassIA"
+                                                    print(
+                                                        "\t".join(
+                                                            [
+                                                                x
+                                                                for x in saveNewEvent[
+                                                                    i
                                                                 ]
-                                                            ),
-                                                            file=out6,
-                                                        )
-                                                except:
-                                                    print(saveNewEvent)
+                                                            ]
+                                                        ),
+                                                        file=out6,
+                                                    )
                                             elif writeClassIb:
                                                 # print("yes")
                                                 # Writes Class 1b (MBSs)
-                                                try:
-                                                    for i in range(
-                                                        0, len(saveNewEvent), 1
-                                                    ):
-                                                        saveNewEvent[i][-1] = "ClassIB"
-                                                        print(
-                                                            "\t".join(
-                                                                [
-                                                                    x
-                                                                    for x in saveNewEvent[
-                                                                        i
-                                                                    ]
+                                                for i in range(
+                                                    0, len(saveNewEvent), 1
+                                                ):
+                                                    saveNewEvent[i][-1] = "ClassIB"
+                                                    print(
+                                                        "\t".join(
+                                                            [
+                                                                x
+                                                                for x in saveNewEvent[
+                                                                    i
                                                                 ]
-                                                            ),
-                                                            file=out7,
-                                                        )
-                                                    # print("yes", saveNewEvent)
-                                                except:
-                                                    print(saveNewEvent)
+                                                            ]
+                                                        ),
+                                                        file=out7,
+                                                    )
+                                                # print("yes", saveNewEvent)
 
                                         elif writeClassIII:
                                             # print("yes")
-                                            try:
-                                                for i in range(0, len(saveNewEvent), 1):
-                                                    saveNewEvent[i].append("ClassIII")
-                                                    saveNewEvent[i].append(category)
-                                                    print(
-                                                        "\t".join(
-                                                            [x for x in saveNewEvent[i]]
-                                                        ),
-                                                        file=out5,
-                                                    )
-                                            except:
-                                                print(saveNewEvent)
+                                            for i in range(0, len(saveNewEvent), 1):
+                                                saveNewEvent[i].append("ClassIII")
+                                                saveNewEvent[i].append(category)
+                                                print(
+                                                    "\t".join(
+                                                        [x for x in saveNewEvent[i]]
+                                                    ),
+                                                    file=out5,
+                                                )
                                 if len(linesSubClass) != 0:
-                                    try:
-                                        category = "vaf"
-                                        for i in range(0, len(linesSubClass), 1):
-                                            linesSubClass[i].append("ClassIII")
-                                            linesSubClass[i].append(category)
+                                    category = "vaf"
+                                    for i in range(0, len(linesSubClass), 1):
+                                        linesSubClass[i].append("ClassIII")
+                                        linesSubClass[i].append(category)
 
-                                            print(
-                                                "\t".join(
-                                                    [x for x in linesSubClass[i]]
-                                                ),
-                                                file=out5,
-                                            )
-                                    except:
-                                        print(linesSubClass)
+                                        print(
+                                            "\t".join(
+                                                [x for x in linesSubClass[i]]
+                                            ),
+                                            file=out5,
+                                        )
 
                     lines = []
 
@@ -2354,48 +2328,36 @@ def findClustersOfClusters_noVAF(
                         else:
                             if writeClassI:
                                 # Writes Class I (Single Events)
-                                try:
-                                    for i in range(0, len(lines), 1):
-                                        lines[i].append("ClassI")
-                                        print(
-                                            "\t".join([x for x in lines[i]]), file=out3
-                                        )
-                                except:
-                                    print(lines)
+                                for i in range(0, len(lines), 1):
+                                    lines[i].append("ClassI")
+                                    print(
+                                        "\t".join([x for x in lines[i]]), file=out3
+                                    )
 
                                 if writeClassIc:
                                     # Writes Class Ic (Omiklis)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIC"
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out8,
-                                            )
-                                    except:
-                                        print(lines)
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIC"
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out8,
+                                        )
                                 elif writeClassIa:
                                     # Writes Class Ia (DBSs)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIA"
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out6,
-                                            )
-                                    except:
-                                        print(lines)
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIA"
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out6,
+                                        )
                                 elif writeClassIb:
                                     # Writes Class 1b (MBSs)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIB"
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out7,
-                                            )
-                                    except:
-                                        print(lines)
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIB"
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out7,
+                                        )
 
                     lines = []
 
@@ -2548,37 +2510,25 @@ def findClustersOfClusters_noVAF(
             else:
                 if writeClassI:
                     # Writes Class I (Single Events)
-                    try:
-                        for i in range(0, len(lines), 1):
-                            lines[i].append("ClassI")
-                            print("\t".join([x for x in lines[i]]), file=out3)
-                    except:
-                        print(lines)
+                    for i in range(0, len(lines), 1):
+                        lines[i].append("ClassI")
+                        print("\t".join([x for x in lines[i]]), file=out3)
 
                     if writeClassIc:
                         # Writes Class Ic (Omiklis)
-                        try:
-                            for i in range(0, len(lines), 1):
-                                lines[i][-1] = "ClassIC"
-                                print("\t".join([x for x in lines[i]]), file=out8)
-                        except:
-                            print(lines)
+                        for i in range(0, len(lines), 1):
+                            lines[i][-1] = "ClassIC"
+                            print("\t".join([x for x in lines[i]]), file=out8)
                     elif writeClassIa:
                         # Writes Class Ia (DBSs)
-                        try:
-                            for i in range(0, len(lines), 1):
-                                lines[i][-1] = "ClassIA"
-                                print("\t".join([x for x in lines[i]]), file=out6)
-                        except:
-                            print(lines)
+                        for i in range(0, len(lines), 1):
+                            lines[i][-1] = "ClassIA"
+                            print("\t".join([x for x in lines[i]]), file=out6)
                     elif writeClassIb:
                         # Writes Class 1b (MBSs)
-                        try:
-                            for i in range(0, len(lines), 1):
-                                lines[i][-1] = "ClassIB"
-                                print("\t".join([x for x in lines[i]]), file=out7)
-                        except:
-                            print(lines)
+                        for i in range(0, len(lines), 1):
+                            lines[i][-1] = "ClassIB"
+                            print("\t".join([x for x in lines[i]]), file=out7)
 
         with open(project_path + "clusteredStats" + path_suffix + ".pickle", "wb") as f:
             pickle.dump(len_mnvs, f)
@@ -2680,16 +2630,36 @@ def findClustersOfClusters_noVAF(
 
 
 def generateMatrices(genome, log_out, project_path, path_suffix, subclassesProcessor):
+    """Generates the matrices of every subclass that has mutations. A subclass whose
+    table only has the header (no mutations) is skipped; any other error is raised.
+    The standard output is always restored."""
     temp = sys.stdout
     sys.stdout = open(log_out, "a")
     try:
         for subclass in subclassesProcessor:
-            matrices = matGen.SigProfilerMatrixGeneratorFunc(
+            folder = project_path + "subclasses" + path_suffix + "/" + subclass + "/"
+            if not _subclass_has_mutations(folder):
+                continue
+            matGen.SigProfilerMatrixGeneratorFunc(
                 subclass,
                 genome,
-                project_path + "subclasses" + path_suffix + "/" + subclass + "/",
+                folder,
                 seqInfo=True,
-            )  # , plot=True)
+            )
+    finally:
         sys.stdout.close()
-    except:
-        pass
+        sys.stdout = temp
+
+
+def _subclass_has_mutations(folder):
+    """True if any table of the folder has a line besides its header."""
+    if not os.path.isdir(folder):
+        return False
+    for name in os.listdir(folder):
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            with open(path) as f:
+                next(f, None)
+                if any(line.strip() for line in f):
+                    return True
+    return False

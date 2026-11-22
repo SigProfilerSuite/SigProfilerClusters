@@ -165,6 +165,11 @@ class TestSkippedSamples:
         result = _run(tmp_path, folders=("S1", "S2"))
         assert set(result["imds"]) == {"S1"}
 
+    def test_sample_without_an_original_file_is_reported(self, tmp_path):
+        _build(tmp_path, sample="S1", orig=False)
+        with pytest.warns(UserWarning, match="S1 does not have nearby IDs"):
+            _run(tmp_path)
+
     def test_sample_without_distances_is_skipped(self, tmp_path):
         _build(tmp_path)
         (tmp_path / "orig" / "S1_96_intradistance.txt").write_text("0\tS1\t1\t100\tC\tT\t0\n")
@@ -203,6 +208,18 @@ class TestWithCorrection:
         result = _run(tmp_path, correction=True)
         for name in ("y2s_corrected", "bincenters2s_corrected", "q_values_corrected", "interval_lines_corrected"):
             assert set(result[name]["S1"]) == {EDGE}, name
+
+    def test_a_failure_in_a_region_is_raised(self, tmp_path, monkeypatch):
+        # audit finding 15: it used to be swallowed and the region was left without cutoff
+        _build(tmp_path)
+        _regions(monkeypatch, [EDGE])
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("first_run failed")
+
+        monkeypatch.setattr(hotspot, "first_run", fail)
+        with pytest.raises(RuntimeError, match="first_run failed"):
+            _run(tmp_path, correction=True)
 
     def test_region_without_mutations_is_skipped(self, tmp_path, monkeypatch):
         _build(tmp_path)

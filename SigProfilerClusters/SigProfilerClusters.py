@@ -247,13 +247,8 @@ def distance_multiple_files_sims(
             sample = final_distances_filtered[0][1]
             file_sample = sample.split("_")[:-1]
             file_sample = ("_").join([x for x in file_sample])
-            try:
-                if not os.path.exists(
-                    output_path + file_sample + "/"
-                ):  # Necessary because the multi-processing throws an unpredictable error otherwise.
-                    os.makedirs(output_path + file_sample + "/")
-            except:
-                pass
+            # exist_ok: several processes may create the same folder
+            os.makedirs(output_path + file_sample + "/", exist_ok=True)
 
             # Open the current sample file and start iterating through the final distances
             # If a new sample is reached, close the current file and open the new one
@@ -281,11 +276,7 @@ def distance_multiple_files_sims(
                     if sample.split("_")[0] != file_sample:
                         file_sample = sample.split("_")[:-1]
                         file_sample = ("_").join([x for x in file_sample])
-                        try:
-                            if not os.path.exists(output_path + file_sample + "/"):
-                                os.makedirs(output_path + file_sample + "/")
-                        except:
-                            pass
+                        os.makedirs(output_path + file_sample + "/", exist_ok=True)
                         out_file = open(
                             output_path
                             + file_sample
@@ -299,11 +290,7 @@ def distance_multiple_files_sims(
                         )
                         print("\t".join([str(y) for y in x]), file=out_file)
                     else:
-                        try:
-                            if not os.path.exists(output_path + file_sample + "/"):
-                                os.makedirs(output_path + file_sample + "/")
-                        except:
-                            pass
+                        os.makedirs(output_path + file_sample + "/", exist_ok=True)
                         out_file = open(
                             output_path
                             + file_sample

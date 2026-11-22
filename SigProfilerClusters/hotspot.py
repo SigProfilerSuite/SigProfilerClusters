@@ -491,10 +491,7 @@ def first_run(
     # 	imdsProbabilities.append(y[bisect.bisect_left(x, dist)])
 
     maximum_sim = 0
-    try:
-        maximum_orig = max(distances_orig)
-    except:
-        maximum_orig = 0
+    maximum_orig = max(distances_orig, default=0)
     max_dist = max(maximum_orig, maximum_sim)
 
     bin1 = [0]
@@ -981,47 +978,44 @@ def calculateSampleIMDs(
 
         if original:  # Calculate data/plots for original sample
             # Gather the distances for the original sample
-            try:
-                if not os.path.exists(
-                    directory_orig
-                    + sample
-                    + "_"
-                    + contexts
-                    + exomeSuffix
-                    + "_intradistance.txt"
-                ):
-                    continue
-                with open(
-                    directory_orig
-                    + sample
-                    + "_"
-                    + contexts
-                    + exomeSuffix
-                    + "_intradistance.txt"
-                ) as f2:
-                    for lines in f2:
-                        line = lines.strip().split()
-                        if int(line[0]) >= 1:
-                            if chrom_based:
-                                if line[2] not in distances_orig_all_samps:
-                                    distances_orig_all_samps[line[2]] = [line]
-                                    distances_orig_all[line[2]] = [int(line[0])]
-                                else:
-                                    distances_orig_all_samps[line[2]].append(line)
-                                    distances_orig_all[line[2]].append(int(line[0]))
-                            else:
-                                distances_orig_all_samps.append(line)
-                                distances_orig_all.append(int(line[0]))
-                            if correction:
-                                densityMuts.append(
-                                    int(line[3]) + chromLengths[genome][line[2]]
-                                )
-            except:
-                print(
+            if not os.path.exists(
+                directory_orig
+                + sample
+                + "_"
+                + contexts
+                + exomeSuffix
+                + "_intradistance.txt"
+            ):
+                warnings.warn(
                     sample
                     + " does not have nearby IDs to one another. Skipping this sample."
                 )
                 continue
+            with open(
+                directory_orig
+                + sample
+                + "_"
+                + contexts
+                + exomeSuffix
+                + "_intradistance.txt"
+            ) as f2:
+                for lines in f2:
+                    line = lines.strip().split()
+                    if int(line[0]) >= 1:
+                        if chrom_based:
+                            if line[2] not in distances_orig_all_samps:
+                                distances_orig_all_samps[line[2]] = [line]
+                                distances_orig_all[line[2]] = [int(line[0])]
+                            else:
+                                distances_orig_all_samps[line[2]].append(line)
+                                distances_orig_all[line[2]].append(int(line[0]))
+                        else:
+                            distances_orig_all_samps.append(line)
+                            distances_orig_all.append(int(line[0]))
+                        if correction:
+                            densityMuts.append(
+                                int(line[3]) + chromLengths[genome][line[2]]
+                            )
 
         # Collect simulation distances
         sim_count = len(files)
@@ -1070,43 +1064,42 @@ def calculateSampleIMDs(
         if correction:
             regions = densityCorrection(densityMuts, densityMutsSim, windowSize)
             regionsSamps[folder] = regions
-            try:
-                densityCorrectDistances = {}
-                densityCorrectDistances_samps = {}
-                densityCorrectDistancesSims = {}
-                for region in regions:
-                    densityCorrectDistances[region] = []
-                    densityCorrectDistancesSims[region] = []
-                    densityCorrectDistances_samps[region] = []
-                with open(
-                    directory_orig
-                    + sample
-                    + "_"
-                    + contexts
-                    + exomeSuffix
-                    + "_intradistance.txt"
-                ) as f2:
-                    for lines in f2:
-                        line = lines.strip().split()
-                        if int(line[0]) >= 1:
-                            position = int(line[3]) + chromLengths[genome][line[2]]
-                            try:
-                                bisectRegion = regions[
-                                    bisect.bisect_left(regions, position)
-                                ]
-                            except:
-                                continue
-                            if bisectRegion - position < windowSize:
-                                densityCorrectDistances_samps[bisectRegion].append(line)
-                                densityCorrectDistances[bisectRegion].append(
-                                    int(line[0])
-                                )
-            except:
-                print(
-                    sample
-                    + " does not have nearby IDs to one another. Skipping this sample."
+            intradistance = (
+                directory_orig + sample + "_" + contexts + exomeSuffix + "_intradistance.txt"
+            )
+            if not os.path.exists(intradistance):
+                warnings.warn(
+                    sample + " does not have nearby IDs to one another. Skipping this sample."
                 )
                 continue
+            densityCorrectDistances = {}
+            densityCorrectDistances_samps = {}
+            densityCorrectDistancesSims = {}
+            for region in regions:
+                densityCorrectDistances[region] = []
+                densityCorrectDistancesSims[region] = []
+                densityCorrectDistances_samps[region] = []
+            with open(
+                directory_orig
+                + sample
+                + "_"
+                + contexts
+                + exomeSuffix
+                + "_intradistance.txt"
+            ) as f2:
+                for lines in f2:
+                    line = lines.strip().split()
+                    if int(line[0]) >= 1:
+                        position = int(line[3]) + chromLengths[genome][line[2]]
+                        index = bisect.bisect_left(regions, position)
+                        if index >= len(regions):
+                            continue
+                        bisectRegion = regions[index]
+                        if bisectRegion - position < windowSize:
+                            densityCorrectDistances_samps[bisectRegion].append(line)
+                            densityCorrectDistances[bisectRegion].append(
+                                int(line[0])
+                            )
 
             for file in files:
                 if file == ".DS_Store":
@@ -1119,12 +1112,10 @@ def calculateSampleIMDs(
                         line = lines.strip().split()
                         if int(line[0]) >= 1:
                             position = int(line[3]) + chromLengths[genome][line[2]]
-                            try:
-                                bisectRegion = regions[
-                                    bisect.bisect_left(regions, position)
-                                ]
-                            except:
+                            index = bisect.bisect_left(regions, position)
+                            if index >= len(regions):
                                 continue
+                            bisectRegion = regions[index]
                             if bisectRegion - position < windowSize:
                                 distances[bisectRegion].append(int(line[0]))
 
@@ -1147,44 +1138,41 @@ def calculateSampleIMDs(
                     std_simCounts_corrected[sample] = {}
                     upper_CIs_refined_corrected[sample] = {}
                     lower_CIs_refined_corrected[sample] = {}
-                try:
-                    if (
-                        len(densityCorrectDistancesSims[region]) == 0
-                        or len(densityCorrectDistances_samps[region]) == 0
-                        or len(densityCorrectDistances[region]) == 0
-                    ):
-                        continue
-                    (
-                        y2s_corrected[sample][region],
-                        bincenters2s_corrected[sample][region],
-                        q_values_corrected[sample][region],
-                        interval_lines_corrected[sample][region],
-                        orig_mutations_samps_corrected[sample][region],
-                        avg_simCounts_corrected[sample][region],
-                        std_simCounts_corrected[sample][region],
-                        imds_corrected[sample][region],
-                        lower_CIs_corrected[sample][region],
-                        upper_CIs_corrected[sample][region],
-                        lower_CIs_refined_corrected[sample][region],
-                        upper_CIs_refined_corrected[sample][region],
-                        avg_bin_counts_samp_corrected[sample][region],
-                    ) = first_run(
-                        densityCorrectDistancesSims[region],
-                        densityCorrectDistances_samps[region],
-                        densityCorrectDistances[region],
-                        vcf_path_clust,
-                        vcf_path_nonClust,
-                        sample,
-                        original,
-                        sim_count,
-                        project,
-                        genome,
-                        clustering_vaf,
-                        correctionData,
-                        chromLengths,
-                    )
-                except:
+                if (
+                    len(densityCorrectDistancesSims[region]) == 0
+                    or len(densityCorrectDistances_samps[region]) == 0
+                    or len(densityCorrectDistances[region]) == 0
+                ):
                     continue
+                (
+                    y2s_corrected[sample][region],
+                    bincenters2s_corrected[sample][region],
+                    q_values_corrected[sample][region],
+                    interval_lines_corrected[sample][region],
+                    orig_mutations_samps_corrected[sample][region],
+                    avg_simCounts_corrected[sample][region],
+                    std_simCounts_corrected[sample][region],
+                    imds_corrected[sample][region],
+                    lower_CIs_corrected[sample][region],
+                    upper_CIs_corrected[sample][region],
+                    lower_CIs_refined_corrected[sample][region],
+                    upper_CIs_refined_corrected[sample][region],
+                    avg_bin_counts_samp_corrected[sample][region],
+                ) = first_run(
+                    densityCorrectDistancesSims[region],
+                    densityCorrectDistances_samps[region],
+                    densityCorrectDistances[region],
+                    vcf_path_clust,
+                    vcf_path_nonClust,
+                    sample,
+                    original,
+                    sim_count,
+                    project,
+                    genome,
+                    clustering_vaf,
+                    correctionData,
+                    chromLengths,
+                )
 
         correctionData = False
         if chrom_based:
