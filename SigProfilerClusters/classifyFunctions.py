@@ -1,4 +1,5 @@
 import os
+from . import constants
 import numpy as np
 import os
 from SigProfilerMatrixGenerator.scripts import SigProfilerMatrixGeneratorFunc as matGen
@@ -198,12 +199,12 @@ def processivitySubclassification(event, out2Y, out2K, out2S, out2N):
     )
 
     maxProcessivity = max(pyrProcess, ketoProcess, strongProcess)
-    processiveLenthRequirement = len(refs) * 0.75
+    processiveLenthRequirement = len(refs) * constants.PROCESSIVE_RUN_FRACTION
     if (
         pyrProcessCG > processiveLenthRequirement
         or pyrProcessTA > processiveLenthRequirement
-        or purityCG > 0.9
-        or purityTA > 0.9
+        or purityCG > constants.PROCESSIVE_PURITY
+        or purityTA > constants.PROCESSIVE_PURITY
     ):
         for line in event:
             print("\t".join([x for x in line]), file=out2Y)
@@ -804,10 +805,10 @@ def findClustersOfClusters(
     ####################################################################################
 
     # Hard-coded cutoffs, which can later be used as additional parameters to the tool.
-    cutoff = 10001  # Min distance required between adjacenet events
-    vaf_cut = 0.1  # Max difference in VAFs of adjacent mutations
+    cutoff = constants.EVENT_GROUPING_DISTANCE  # Min distance required between adjacenet events
+    vaf_cut = constants.VAF_MAX_DIFFERENCE  # Max difference in VAFs of adjacent mutations
     if includedCCFs:
-        vaf_cut = 0.25  # Max difference in VAFs of adjacent mutations
+        vaf_cut = constants.CCF_MAX_DIFFERENCE  # Max difference in VAFs of adjacent mutations
 
     # Load the IMD data structures
     if chrom_based:
@@ -2016,7 +2017,7 @@ def findClustersOfClusters_noVAF(
     ####################################################################################
 
     # Hard-coded cutoffs, which can later be used as additional parameters to the tool.
-    cutoff = 10001  # Min distance required between adjacenet events
+    cutoff = constants.EVENT_GROUPING_DISTANCE  # Min distance required between adjacenet events
 
     # Load the IMD data structures
     if chrom_based:

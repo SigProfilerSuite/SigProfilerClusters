@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from . import constants
 import os
 import re
 import argparse
@@ -642,8 +643,8 @@ def eventProbability(
                             for x in imds
                         ]
                         probs = np.prod(np.array(probs))
-                        if probs < 1e-05:
-                            probs = 1e-05
+                        if probs < constants.EVENT_PROBABILITY_FLOOR:
+                            probs = constants.EVENT_PROBABILITY_FLOOR
 
                         for i, x in eventMuts.iterrows():
                             x = list(x)[:-1] + [probs]

@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from . import constants
 import os
 import numpy as np
 import statistics
@@ -357,7 +358,7 @@ def refineIMD(
     CI,
     lower_CI,
     upper_CI,
-    sigValue=0.01,
+    sigValue=constants.Q_VALUE_THRESHOLD,
 ):
     """
     Refines the discretized IMD cutoff using a binary search algorithm
@@ -412,7 +413,7 @@ def refineIMD(
 
         if middle == right or middle == left:
             return (middle, q_vals[0], avgSim[0], stdevSim[0], upperCI, lowerCI)
-        if q_vals[0] < sigValue and ys[0] / (avgSim[0] + ys[0]) > 0.9:
+        if q_vals[0] < sigValue and ys[0] / (avgSim[0] + ys[0]) > constants.CLUSTERED_FRACTION:
             left = middle
         else:
             right = middle
@@ -560,9 +561,9 @@ def first_run(
     interval_percent = 0
 
     p_vals = []
-    percent_clustered = 0.90
+    percent_clustered = constants.CLUSTERED_FRACTION
     if correctionData:
-        percent_clustered = 0.95
+        percent_clustered = constants.CLUSTERED_FRACTION_CORRECTED
 
     current_orig_mutations_cum = 0
     current_mean_cum = 0
@@ -599,13 +600,13 @@ def first_run(
         current_mean = mean_counts[i]
         current_stdev = std_dev[i]
         current_q = q_vals[i]
-        if orig_mutations / total_mutations < percent_clustered or current_q > 0.01:
+        if orig_mutations / total_mutations < percent_clustered or current_q > constants.Q_VALUE_THRESHOLD:
             # if correctionData:
             # 	print(orig_mutations/total_mutations, previous_interval)
             if abs((orig_mutations / total_mutations) - percent_clustered) < abs(
                 previous_interval - percent_clustered
             ):
-                if current_q > 0.01:
+                if current_q > constants.Q_VALUE_THRESHOLD:
                     interval_line = i - 1
                     orig_mutations -= y2[i]
                     interval_percent = previous_interval * 100
@@ -620,7 +621,7 @@ def first_run(
         previous_interval = orig_mutations / total_mutations
     interval_line = abs(interval_line)
     distance_cut = bincenters2[interval_line]
-    sigValue = 0.01
+    sigValue = constants.Q_VALUE_THRESHOLD
     distance_cut, q_val, avgSim, stdevSim, upper_CI_refined, lower_CI_refined = (
         refineIMD(
             distances,
@@ -636,8 +637,8 @@ def first_run(
             sigValue,
         )
     )
-    if distance_cut > 10000:
-        distance_cut = 10000
+    if distance_cut > constants.IMD_CUTOFF_CAP:
+        distance_cut = constants.IMD_CUTOFF_CAP
 
     if not correctionData:
         if correction:
@@ -850,7 +851,7 @@ def densityCorrectionOriginal(densityMuts, densityMutsSim, binsDensity):
     histSimFinal = np.median(histSims, axis=0)
     fold = hist / histSimFinal
     correctionFolds = [
-        y for x, y, z in zip(fold, bins[:], hist_muts) if x > 1.25 and z > 50
+        y for x, y, z in zip(fold, bins[:], hist_muts) if x > constants.DENSITY_FOLD_CHANGE and z > constants.DENSITY_MIN_MUTATIONS
     ]  # or x < 1/1.25]
     correctionFolds.append(6000000000)
     return correctionFolds
@@ -882,10 +883,10 @@ def densityCorrection(densityMuts, densityMutsSim, windowSize):
     Returns:
        correctionFolds	->	the cumulative genomic position of regions that have a higher mutation density than what is expected by chance (list)
     """
-    sims = random.sample(list(densityMutsSim.keys()), 10)
+    sims = random.sample(list(densityMutsSim.keys()), constants.DENSITY_SIMULATIONS)
     densityMutsSimSample = {x: densityMutsSim[x] for x in sims}
 
-    threshold = 9.0
+    threshold = constants.DENSITY_PEAK_THRESHOLD
     try:
         maxDistance = (
             max(
