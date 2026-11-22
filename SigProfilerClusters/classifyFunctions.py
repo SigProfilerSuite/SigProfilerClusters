@@ -977,6 +977,9 @@ def findClustersOfClusters(
         lines[i] = [str(group_count)] + lines[i]
         print("\t".join([x for x in lines[i]]), file=out)
         total_muts[samp] += 1
+        # Audit finding 3: an event is closed by the blank separator that follows it. The last
+        # event of the table had none, so the second pass never classified it.
+        print("\n\n", file=out)
         out.close()
         with open(
             project_parent_path
@@ -2159,6 +2162,9 @@ def findClustersOfClusters_noVAF(
         lines[i] = [str(group_count)] + lines[i]
         print("\t".join([x for x in lines[i]]), file=out)
         total_muts[samp] += 1
+        # Audit finding 3: an event is closed by the blank separator that follows it. The last
+        # event of the table had none, so the second pass never classified it.
+        print("\n\n", file=out)
         out.close()
         with open(
             project_parent_path

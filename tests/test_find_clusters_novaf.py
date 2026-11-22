@@ -108,12 +108,8 @@ class TestSingleMutationEvent:
         clustered = _run(tmp_path, rows)
         assert _positions(clustered, "class1") == [900000, 900001]
 
-    @pytest.mark.xfail(
-        reason="a one-mutation event at the end of the table skips the 'len(lines) == 1' "
-        "guard of the main loop and is written as class1/class1b (MBS)",
-        strict=True,
-    )
     def test_single_mutation_event_at_the_end_is_dropped(self, tmp_path):
+        # audit finding 3: it used to be written as class1/class1b (MBS)
         rows = [_row(1000), _row(1001), _row(500000)]
         clustered = _run(tmp_path, rows)
         assert _positions(clustered, "class1") == [1000, 1001]
