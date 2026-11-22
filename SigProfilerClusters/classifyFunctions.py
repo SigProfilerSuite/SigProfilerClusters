@@ -20,6 +20,14 @@ import warnings
 UNKNOWN_VAF = float("nan")
 
 
+def has_class2_pattern(distances_above_one, event_size):
+    """True when a clustered event with this many distances above 1 between consecutive
+    mutations cannot be a DBS or MBS: more than one such distance, or a single one in an
+    event of four or more mutations (audit finding 14, e.g. IMDs [1, 1, 2]). Whether it
+    is class II or omikli then depends on the event size."""
+    return distances_above_one > 1 or (distances_above_one == 1 and event_size >= 4)
+
+
 def _field_value(field, key):
     """Value of `key` in a ';'-separated key=value field (VCF INFO or sample column).
     The key must match exactly: TVAF= is not VAF=."""
@@ -1184,7 +1192,7 @@ def findClustersOfClusters(
 
                             if vafs == 0 and distancesFailed == 0:
                                 # Class I or II
-                                if distancesLine > 1:
+                                if has_class2_pattern(distancesLine, len(lines)):
                                     # Class IC or II
                                     if len(lines) >= 4:
                                         writeClassII = True
@@ -1504,7 +1512,7 @@ def findClustersOfClusters(
                                             )
                                         ]
                                         # Class I or II
-                                        if distancesLine > 1:
+                                        if has_class2_pattern(distancesLine, len(saveNewEvent)):
                                             if len(saveNewEvent) >= 4:
                                                 writeClassII = True
                                             else:
@@ -2313,7 +2321,7 @@ def findClustersOfClusters_noVAF(
 
                             if distancesFailed == 0:
                                 # Class I or II
-                                if distancesLine > 1:
+                                if has_class2_pattern(distancesLine, len(lines)):
                                     # Class IC or II
                                     if len(lines) >= 4:
                                         writeClassII = True
@@ -2509,7 +2517,7 @@ def findClustersOfClusters_noVAF(
 
             if distancesFailed == 0:
                 # Class I or II
-                if distancesLine > 1:
+                if has_class2_pattern(distancesLine, len(lines)):
                     # Class IC or II
                     if len(lines) >= 4:
                         writeClassII = True

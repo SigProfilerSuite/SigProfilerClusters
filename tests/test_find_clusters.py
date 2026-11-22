@@ -70,6 +70,31 @@ def _run(tmp_path, rows, correction=False, ccf=False, imds=None):
 # ─── event classes with similar VAFs ─────────────────────────
 
 
+class TestKataegisWithOneGap:
+    """audit finding 14: four or more mutations with a single distance above 1 are class II"""
+
+    @pytest.mark.parametrize(
+        "positions",
+        [
+            [1000, 1001, 1002, 1004],  # IMDs [1, 1, 2]
+            [1000, 1001, 1003, 1004],  # [1, 2, 1]
+            [1000, 1001, 1002, 1052],  # [1, 1, 50]
+        ],
+    )
+    def test_four_or_more_with_one_gap_is_class2(self, tmp_path, positions):
+        rows = [_vrow(p, 0.40) for p in positions] + [_vrow(500000, 0.4), _vrow(500001, 0.4)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class2") == positions
+        assert "class1c" not in _populated(clustered)
+
+    def test_three_mutations_with_one_gap_stay_omikli(self, tmp_path):
+        rows = [_vrow(1000, 0.4), _vrow(1001, 0.4), _vrow(1003, 0.4)]
+        rows += [_vrow(500000, 0.4), _vrow(500001, 0.4)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class1c") == [1000, 1001, 1003]
+        assert _positions(clustered, "class2") == []
+
+
 class TestEventClassesWithSimilarVaf:
     def test_adjacent_pair_is_dbs(self, tmp_path):
         clustered = _run(tmp_path, [_vrow(1000, 0.40), _vrow(1001, 0.42)])
