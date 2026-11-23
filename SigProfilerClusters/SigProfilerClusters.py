@@ -19,6 +19,7 @@ import numpy as np
 import statistics
 import scipy
 import time
+import functools
 import sys
 
 # from SigProfilerExtractor import sigpro as sigs
@@ -689,7 +690,7 @@ def load_previous_analysis(project, ref_dir, contexts, correction, chrom_based):
     return regions, imds
 
 
-def analysis(
+def _run_analysis(
     project,
     genome,
     contexts,
@@ -1423,8 +1424,6 @@ def analysis(
                 classifyFunctions.pullVaf(
                     project, ref_dir, variant_caller, tumor_vaf_column, vaf_field, correction
                 )
-                sys.stderr.close()
-                sys.stderr = open(error_file, "a")
                 classifyFunctions.findClustersOfClusters(
                     project,
                     chrom_based,
@@ -1439,11 +1438,8 @@ def analysis(
                     correction,
                     includedCCFs,
                 )
-                sys.stderr.close()
             elif includedCCFs:
                 classifyFunctions.pullCCF(project, ref_dir, correction)
-                sys.stderr.close()
-                sys.stderr = open(error_file, "a")
                 classifyFunctions.findClustersOfClusters(
                     project,
                     chrom_based,
@@ -1458,7 +1454,6 @@ def analysis(
                     correction,
                     includedCCFs,
                 )
-                sys.stderr.close()
             else:
                 classifyFunctions.findClustersOfClusters_noVAF(
                     project,
@@ -1473,9 +1468,7 @@ def analysis(
                     imds,
                     correction,
                 )
-                sys.stderr.close()
             print("Completed!", flush=True)
-        sys.stderr = open(error_file, "a")
 
         # Generate the rainfall plots.
         if plotRainfall:
@@ -1514,10 +1507,23 @@ def analysis(
             )
             print("done")
 
-    sys.stderr.close()
     end = time.time() - start
     print(
         "SigProfilerClusters successfully finished! Elapsed time: "
         + str(round(end, 2))
         + " seconds."
     )
+
+
+@functools.wraps(_run_analysis)
+def analysis(*args, **kwargs):
+    # _run_analysis redirects sys.stderr to the .err file of the run. Whatever happens
+    # (success, error, sys.exit), the original stream is given back and the file closed.
+    original_stderr = sys.stderr
+    try:
+        return _run_analysis(*args, **kwargs)
+    finally:
+        redirected = sys.stderr
+        sys.stderr = original_stderr
+        if redirected is not original_stderr:
+            redirected.close()

@@ -53,3 +53,37 @@ class TestOutputTypeGuard:
         assert parse_arguments_clusters(base + ["--output_type", "all"], "d").output_type == "all"
         with pytest.raises(SystemExit):
             parse_arguments_clusters(base + ["--output_type", "original"], "d")
+
+
+class TestStderrIsRestored:
+    """audit finding 13: analysis() redirects sys.stderr to its .err file; it must give the
+    original back, also when it stops with an error, and never leave it closed"""
+
+    def test_stderr_restored_after_an_error(self, tmp_path):
+        import sys
+
+        original = sys.stderr
+        with pytest.raises(FileNotFoundError):  # there is no input/ folder: fails after the redirection
+            analysis("proj", "GRCh37", "96", ["96"], str(tmp_path) + "/")
+        assert sys.stderr is original
+        assert not sys.stderr.closed
+
+    def test_stderr_restored_after_a_system_exit(self, tmp_path):
+        import sys
+
+        original = sys.stderr
+        with pytest.raises(SystemExit):
+            analysis("proj", "GRCh37", "96", ["96"], str(tmp_path) + "/", chrom_based=True)
+        assert sys.stderr is original
+
+    def test_the_err_file_is_still_created(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            analysis("proj", "GRCh37", "96", ["96"], str(tmp_path) + "/")
+        assert len(list((tmp_path / "logs").glob("*.err"))) == 1
+
+    def test_signature_is_unchanged(self):
+        import inspect
+
+        parameters = list(inspect.signature(analysis).parameters)
+        assert parameters[:5] == ["project", "genome", "contexts", "simContext", "input_path"]
+        assert "tumor_vaf_column" in parameters
