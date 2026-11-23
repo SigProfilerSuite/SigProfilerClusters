@@ -909,6 +909,10 @@ def densityCorrection(densityMuts, densityMutsSim, windowSize):
     return regions
 
 
+SKIP_NO_NEARBY_MUTATIONS = "no nearby mutations (no intradistance file for the original sample)"
+SKIP_NOT_ENOUGH_DISTANCES = "not enough distances to estimate the cutoff"
+
+
 def calculateSampleIMDs(
     project,
     folders,
@@ -926,6 +930,7 @@ def calculateSampleIMDs(
     correction,
     chromLengths,
 ):
+    skipped_samples = {}  # sample -> reason, for the samples that the analysis skips
     imds = {}
     y2s = {}
     bincenters2s = {}
@@ -990,6 +995,7 @@ def calculateSampleIMDs(
                     sample
                     + " does not have nearby IDs to one another. Skipping this sample."
                 )
+                skipped_samples[sample] = SKIP_NO_NEARBY_MUTATIONS
                 continue
             with open(
                 directory_orig
@@ -1071,6 +1077,7 @@ def calculateSampleIMDs(
                 warnings.warn(
                     sample + " does not have nearby IDs to one another. Skipping this sample."
                 )
+                skipped_samples[sample] = SKIP_NO_NEARBY_MUTATIONS
                 continue
             densityCorrectDistances = {}
             densityCorrectDistances_samps = {}
@@ -1229,6 +1236,7 @@ def calculateSampleIMDs(
                 or len(distances_orig_all_samps) == 0
                 or len(distances_orig_all) == 0
             ):
+                skipped_samples[sample] = SKIP_NOT_ENOUGH_DISTANCES
                 continue
             (
                 y2s[sample],
@@ -1293,8 +1301,30 @@ def calculateSampleIMDs(
         std_simCounts_corrected,
         upper_CIs_refined_corrected,
         lower_CIs_refined_corrected,
+        skipped_samples,
     )
     # return(imds)
+
+
+def report_skipped_samples(skipped_samples, table_path, log_file):
+    """Reports together the samples that the analysis skipped, with the reason: on the screen,
+    at the end of the log file and in a tab-separated table. Without skipped samples nothing
+    is printed or written, and the table of an earlier run is removed."""
+    if os.path.exists(table_path):
+        os.remove(table_path)
+    if not skipped_samples:
+        return
+    lines = [
+        sample + ": " + skipped_samples[sample] for sample in sorted(skipped_samples)
+    ]
+    text = "Skipped samples (" + str(len(lines)) + "):\n  " + "\n  ".join(lines)
+    print("\n" + text, flush=True)
+    with open(log_file, "a") as log:
+        log.write("\n-------Skipped samples-------\n" + text + "\n")
+    with open(table_path, "w") as table:
+        table.write("sample\treason\n")
+        for sample in sorted(skipped_samples):
+            table.write(sample + "\t" + skipped_samples[sample] + "\n")
 
 
 def getResults(result):
@@ -1327,6 +1357,7 @@ def getResults(result):
         std_simCounts_corrected,
         upper_CIs_refined_corrected,
         lower_CIs_refined_corrected,
+        skipped_samples,
     ) = result
     imdsFinal.update(imds)
     y2sFinal.update(y2s)
@@ -1358,6 +1389,7 @@ def getResults(result):
     std_simCounts_correctedFinal.update(std_simCounts_corrected)
     upper_CIs_refined_correctedFinal.update(upper_CIs_refined_corrected)
     lower_CIs_refined_correctedFinal.update(lower_CIs_refined_corrected)
+    skipped_samplesFinal.update(skipped_samples)
 
     # allResults.append(result)
 
@@ -1675,7 +1707,7 @@ def hotSpotAnalysis(
     ################################################################
 
     # Instantiate the majority of the data structures
-    global imdsFinal, y2sFinal, bincenters2sFinal, q_valuesFinal, interval_linesFinal, orig_mutations_sampsFinal, lower_CIsFinal, upper_CIsFinal, avg_bin_counts_sampFinal, avg_simCountsFinal, std_simCountsFinal, upper_CIs_refinedFinal, lower_CIs_refinedFinal, imds_correctedFinal, y2s_correctedFinal, bincenters2s_correctedFinal, q_values_correctedFinal, interval_lines_correctedFinal, orig_mutations_samps_correctedFinal, lower_CIs_correctedFinal, upper_CIs_correctedFinal, avg_bin_counts_samp_correctedFinal, regionsSampsFinal, avg_simCounts_correctedFinal, std_simCounts_correctedFinal, upper_CIs_refined_correctedFinal, lower_CIs_refined_correctedFinal
+    global imdsFinal, y2sFinal, bincenters2sFinal, q_valuesFinal, interval_linesFinal, orig_mutations_sampsFinal, lower_CIsFinal, upper_CIsFinal, avg_bin_counts_sampFinal, avg_simCountsFinal, std_simCountsFinal, upper_CIs_refinedFinal, lower_CIs_refinedFinal, imds_correctedFinal, y2s_correctedFinal, bincenters2s_correctedFinal, q_values_correctedFinal, interval_lines_correctedFinal, orig_mutations_samps_correctedFinal, lower_CIs_correctedFinal, upper_CIs_correctedFinal, avg_bin_counts_samp_correctedFinal, regionsSampsFinal, avg_simCounts_correctedFinal, std_simCounts_correctedFinal, upper_CIs_refined_correctedFinal, lower_CIs_refined_correctedFinal, skipped_samplesFinal
     # imds = {}
     # y2s = {}
     # bincenters2s = {}
@@ -1735,6 +1767,7 @@ def hotSpotAnalysis(
     std_simCounts_correctedFinal = {}
     upper_CIs_refined_correctedFinal = {}
     lower_CIs_refined_correctedFinal = {}
+    skipped_samplesFinal = {}
 
     folders = os.listdir(directory)
 

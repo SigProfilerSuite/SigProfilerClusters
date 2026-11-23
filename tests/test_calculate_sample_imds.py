@@ -47,6 +47,7 @@ RESULT_NAMES = [
     "std_simCounts_corrected",
     "upper_CIs_refined_corrected",
     "lower_CIs_refined_corrected",
+    "skipped_samples",
 ]
 
 

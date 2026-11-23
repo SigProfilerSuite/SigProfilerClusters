@@ -1396,6 +1396,8 @@ def _run_analysis(
         print("Completed!", flush=True)  # IMD calculations have successfully completed.
 
     # Begin the hotspot analysis. This function will also produce the IMD distribution and spectra plots
+    skipped_samples = {}
+    skipped_table = ref_dir + "output/skipped_samples" + path_suffix + ".txt"
     if analysis == "hotspot" or analysis == "all":
         original = True
         firstRun = True
@@ -1422,11 +1424,13 @@ def _run_analysis(
             chrom_based,
             correction,
         )
+        skipped_samples = dict(getattr(hotspot, "skipped_samplesFinal", {}))
         if regions is None:
             # No clustered mutations: not an error, but there is nothing to subclassify or plot
             print(
                 "No clustered mutations were found. Skipping the subclassification and the plots."
             )
+            hotspot.report_skipped_samples(skipped_samples, skipped_table, log_file)
             return
 
     # Allows for the clustered muutations to automactically run through the extraction.
@@ -1529,6 +1533,7 @@ def _run_analysis(
             print("done")
 
     end = time.time() - start
+    hotspot.report_skipped_samples(skipped_samples, skipped_table, log_file)
     print(
         "SigProfilerClusters successfully finished! Elapsed time: "
         + str(round(end, 2))
