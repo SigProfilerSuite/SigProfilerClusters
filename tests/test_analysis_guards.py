@@ -5,6 +5,7 @@ Run with: pytest tests/test_analysis_guards.py -v
 
 import pytest
 
+from SigProfilerClusters.exceptions import InvalidParameterError
 from SigProfilerClusters.SigProfilerClusters import analysis
 
 
@@ -13,16 +14,15 @@ def _analysis(**kwargs):
 
 
 class TestChromBasedGuard:
-    def test_chrom_based_exits(self):
-        with pytest.raises(SystemExit):
+    def test_chrom_based_is_rejected(self):
+        with pytest.raises(InvalidParameterError):
             _analysis(chrom_based=True)
 
-    def test_chrom_based_explains_that_it_is_deprecated(self, capsys):
-        with pytest.raises(SystemExit):
+    def test_chrom_based_explains_that_it_is_deprecated(self):
+        with pytest.raises(InvalidParameterError) as error:
             _analysis(chrom_based=True)
-        out = capsys.readouterr().out
-        assert "chrom_based has been deprecated" in out
-        assert "rerun with chrom_based=False" in out
+        assert "chrom_based has been deprecated" in str(error.value)
+        assert "rerun with chrom_based=False" in str(error.value)
 
 
 class TestOutputTypeGuard:
@@ -68,11 +68,11 @@ class TestStderrIsRestored:
         assert sys.stderr is original
         assert not sys.stderr.closed
 
-    def test_stderr_restored_after_a_system_exit(self, tmp_path):
+    def test_stderr_restored_after_an_early_error(self, tmp_path):
         import sys
 
         original = sys.stderr
-        with pytest.raises(SystemExit):
+        with pytest.raises(InvalidParameterError):
             analysis("proj", "GRCh37", "96", ["96"], str(tmp_path) + "/", chrom_based=True)
         assert sys.stderr is original
 

@@ -1873,7 +1873,7 @@ def hotSpotAnalysis(
         # The matrix that tells whether there are clustered mutations depends on the context
         if not has_clustered_mutations(matrices, contexts):
             print("No clustered mutations found")
-            sys.exit()
+            return None, None
         print("\nAnalyzing non-clustered mutations...", flush=True)
         matGen.SigProfilerMatrixGeneratorFunc(
             project + "_nonClustered", genome, vcf_path_nonClust, plot=False

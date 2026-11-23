@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from . import constants
+from .exceptions import InvalidParameterError, MissingSimulationsError
 import os
 import re
 import argparse
@@ -768,7 +769,7 @@ def _run_analysis(
             distances are not used in the histogram.
     """
     if output_type not in SUPPORTED_OUTPUT_TYPES:
-        raise ValueError(
+        raise InvalidParameterError(
             f"output_type {output_type!r} is not supported; valid values: "
             + ", ".join(repr(x) for x in SUPPORTED_OUTPUT_TYPES)
             + " (the distances of the original samples and of the simulations are "
@@ -779,10 +780,12 @@ def _run_analysis(
         includedVAFs = False
 
     if chrom_based:
-        print(
-            "The parameter chrom_based has been deprecated within the SigProfilerClusters pipeline. Please rerun with chrom_based=False. Note, you may still run the simulations using chrom_based=True, which will be used as the background model for the clusterd analysis."
+        raise InvalidParameterError(
+            "The parameter chrom_based has been deprecated within the SigProfilerClusters "
+            "pipeline. Please rerun with chrom_based=False. Note, you may still run the "
+            "simulations using chrom_based=True, which will be used as the background model "
+            "for the clustered analysis."
         )
-        sys.exit()
     # Conversions for NCBI chromosome names to standard notation
     ncbi_chrom = {
         "NC_000067.6": "1",
@@ -1188,8 +1191,11 @@ def _run_analysis(
 
     # More than one type of analysis is specified. Currently no longer supported
     else:
-        print("Please only provide one type of context for analysis")
-        sys.exit()
+        raise InvalidParameterError(
+            "Please only provide one type of context for analysis (simContext has "
+            + str(len(simContext))
+            + ")."
+        )
 
     # Organize additional paths/files and corresponding suffixes
     file_context2 = inter_label
@@ -1259,19 +1265,17 @@ def _run_analysis(
     # Checks for simulated data. If there are not simulations, then inform the user to generate simulations first before
     # performing the clusters analysis:
     if not os.path.exists(simulation_path):
-        print(
+        raise MissingSimulationsError(
             "There are no simulated data present for this project. Please generate simulations before running SigProfilerClusters.\n"
             "\tThe package can be installed via pip:\n\t\t\t$ pip install SigProfilerSimulator\n"
             "\n\tand used within a python3 sessions as follows:\n\t\t\t$ python3\n\t\t\t>> from SigProfilerSimulator import SigProfilerSimulator as sigSim\n"
             "\t\t\t>> sigSim.SigProfilerSimulator(project, project_path, genome, contexts=['6144'], simulations=100)\n\n"
             "\tFor a complete list of parameters, visit the github repo (https://github.com/AlexandrovLab/SigProfilerSimulator) or the documentation page (https://osf.io/usxjz/wiki/home/)"
         )
-        sys.exit()
     if len(os.listdir(simulation_path)) < 100:
-        print(
+        raise MissingSimulationsError(
             "Please simulate a minimum of 100 simulations per sample to successfully run SigProfilerClusters."
         )
-        sys.exit()
 
     # Collect simulation files and distribute them into the available processors for parallelization
     simulations = os.listdir(simulation_path)
@@ -1407,6 +1411,12 @@ def _run_analysis(
             chrom_based,
             correction,
         )
+        if regions is None:
+            # No clustered mutations: not an error, but there is nothing to subclassify or plot
+            print(
+                "No clustered mutations were found. Skipping the subclassification and the plots."
+            )
+            return
 
     # Allows for the clustered muutations to automactically run through the extraction.
     # This option is not recommended, but rather the extractions should be run separately after
@@ -1518,7 +1528,7 @@ def _run_analysis(
 @functools.wraps(_run_analysis)
 def analysis(*args, **kwargs):
     # _run_analysis redirects sys.stderr to the .err file of the run. Whatever happens
-    # (success, error, sys.exit), the original stream is given back and the file closed.
+    # (success, error or exit), the original stream is given back and the file closed.
     original_stderr = sys.stderr
     try:
         return _run_analysis(*args, **kwargs)
