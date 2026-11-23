@@ -1362,6 +1362,16 @@ def getResults(result):
     # allResults.append(result)
 
 
+def has_clustered_mutations(matrices, contexts):
+    """
+    True if the matrix of the requested context has at least one mutation: "ID" for the
+    ID (indel) analysis and "96" for SBS. An ID analysis has no "96" matrix (audit finding 12).
+    """
+    key = "ID" if contexts in ("ID", "INDEL") else "96"
+    matrix = matrices.get(key)
+    return matrix is not None and bool(matrix.sum().sum() != 0)
+
+
 def hotSpotAnalysis(
     project,
     genome,
@@ -1860,30 +1870,10 @@ def hotSpotAnalysis(
         matrices = matGen.SigProfilerMatrixGeneratorFunc(
             project + "_clustered", genome, vcf_path_clust, plot=False
         )
-        ##To handle the none matrices
-        if matrices.get("96") is None:
+        # The matrix that tells whether there are clustered mutations depends on the context
+        if not has_clustered_mutations(matrices, contexts):
             print("No clustered mutations found")
             sys.exit()
-        elif matrices["96"].sum().sum() == 0:
-            print("No clustered mutations found")
-            sys.exit()
-        # if contexts == "96":
-        #     if "96" in matrices:
-        #         if matrices["96"].sum().sum() == 0:
-        #             print("No clustered mutations found")
-        #             sys.exit()
-        #     else:
-        #         print("No clustered mutations found")
-        #         sys.exit()
-        elif contexts == "ID":
-            print()
-            if "ID" in matrices:
-                if matrices["ID"].sum().sum() == 0:
-                    print("No clustered mutations found")
-                    sys.exit()
-            else:
-                print("No clustered mutations found")
-                sys.exit()
         print("\nAnalyzing non-clustered mutations...", flush=True)
         matGen.SigProfilerMatrixGeneratorFunc(
             project + "_nonClustered", genome, vcf_path_nonClust, plot=False
