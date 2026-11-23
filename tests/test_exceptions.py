@@ -122,3 +122,27 @@ class TestNoClusteredMutations:
         result = _analysis(path, analysis="hotspot", sortSims=False, subClassify=True)
         assert result is None
         assert "No clustered mutations were found" in capsys.readouterr().out
+
+
+class TestUnsupportedGenome:
+    """audit finding 23: a genome without centromere data fails at the start, with a clear
+    error, not with a KeyError after the distances were calculated"""
+
+    @pytest.mark.parametrize("genome", ["hg19", "GRCh36", "", "grch37"])
+    def test_unsupported_genome_is_rejected_at_the_start(self, tmp_path, genome):
+        with pytest.raises(exceptions.InvalidParameterError) as error:
+            analysis("proj", genome, "96", ["96"], str(tmp_path) + "/")
+        assert repr(genome) in str(error.value)
+
+    def test_the_message_lists_the_supported_genomes(self, tmp_path):
+        with pytest.raises(exceptions.InvalidParameterError) as error:
+            analysis("proj", "hg19", "96", ["96"], str(tmp_path) + "/")
+        for genome in ("GRCh37", "GRCh38", "mm9", "mm10", "mm39", "rn6"):
+            assert genome in str(error.value)
+
+    @pytest.mark.parametrize("genome", ["GRCh37", "GRCh38", "mm9", "mm10", "mm39", "rn6"])
+    def test_supported_genomes_pass_the_check(self, tmp_path, genome):
+        # they go on and fail later (no input folder), not because of the genome
+        with pytest.raises(Exception) as error:
+            analysis("proj", genome, "96", ["96"], str(tmp_path) + "/")
+        assert not isinstance(error.value, exceptions.InvalidParameterError)

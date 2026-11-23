@@ -964,6 +964,17 @@ def _run_analysis(
         },
     }
 
+    # The centromere positions are needed by the distance calculation of every genome: fail now,
+    # with the genomes that can be used, instead of with a KeyError after the work was done
+    if genome not in centromeres:
+        raise InvalidParameterError(
+            "The genome "
+            + repr(genome)
+            + " is not supported. Supported genomes: "
+            + ", ".join(sorted(centromeres))
+            + "."
+        )
+
     # Collect the paths for the respective reference genome and quantiy the genome length and respective bins
     # using the default/provided window size
     chrom_path, ref_dir = matRef.reference_paths(genome)
