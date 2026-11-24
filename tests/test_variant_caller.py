@@ -1,14 +1,9 @@
 import os
-import random
+import shutil
 
-import numpy as np
 import pytest
 from SigProfilerSimulator import SigProfilerSimulator as sigSim
 from SigProfilerClusters import SigProfilerClusters as hp
-
-
-# With this seed the three example inputs get mutations repeated on three chromosomes
-SIMULATION_SEED = 11
 
 
 def chrom_sort_key(line):
@@ -74,12 +69,9 @@ def run_analysis_for_variant_callers_separate_steps(
         assert os.path.exists(input_path), f"Input path does not exist for {caller}: {input_path}"
         seed_file_path = os.path.join(base_path, "seeds_file", "Simulator_seeds.txt")
 
-        # SigProfilerSimulator distributes the mutations over the chromosomes with the global
-        # random and numpy generators, not with the seed file. Unseeded, some draws put every
-        # mutation on a different chromosome: no simulation has an adjacent pair, there are no
-        # IMDs and the analysis fails (audit register, finding 114). Seeding makes it reproducible.
-        random.seed(SIMULATION_SEED)
-        np.random.seed(SIMULATION_SEED)
+        # From SigProfilerSimulator 1.3.2 the seed file alone fixes the simulations (the
+        # distribution of the mutations over the chromosomes no longer uses global generators).
+        # Before, this test had to seed random and numpy as well (audit finding 114).
 
         # Run SigProfilerSimulator
         print(f"Running SigProfilerSimulator for {caller}...")
@@ -184,3 +176,33 @@ def run_one_genome_test(caller):
 @pytest.mark.parametrize("caller", ["caveman", "mutect2", "standard"])
 def test_caller_variants(caller):
     assert run_one_genome_test(caller) is True
+
+
+def test_simulations_are_reproducible_with_the_seed_file(tmp_path):
+    """Two simulations with the same seed file and the same input give the same files, without
+    seeding random or numpy. SigProfilerSimulator 1.3.2 is the first version that does it
+    (audit findings 4, 114 and 116); the integration tests above rely on it."""
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    seed_file = os.path.join(base_path, "seeds_file", "Simulator_seeds.txt")
+    vcf = os.path.join(base_path, "input_vcf_sim", "standard", "standard.vcf")
+
+    runs = []
+    for number in range(2):
+        project_path = tmp_path / f"run{number}"
+        project_path.mkdir()
+        shutil.copy(vcf, project_path)
+        sigSim.SigProfilerSimulator(
+            project="standard",
+            project_path=str(project_path) + os.sep,
+            genome="GRCh37",
+            contexts=["96"],
+            seed_file=seed_file,
+            simulations=5,
+        )
+        runs.append(project_path / "output" / "simulations")
+
+    files = sorted(p.relative_to(runs[0]) for p in runs[0].rglob("*") if p.is_file())
+    assert len(files) == 5, files
+    assert files == sorted(p.relative_to(runs[1]) for p in runs[1].rglob("*") if p.is_file())
+    different = [str(f) for f in files if (runs[0] / f).read_bytes() != (runs[1] / f).read_bytes()]
+    assert not different, f"simulations differ between two runs with the same seed file: {different}"
