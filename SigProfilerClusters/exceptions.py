@@ -15,3 +15,7 @@ class InvalidParameterError(SigProfilerClustersError, ValueError):
 
 class MissingSimulationsError(SigProfilerClustersError):
     """The simulations needed by the analysis are missing or too few."""
+
+
+class MissingInputError(SigProfilerClustersError, FileNotFoundError):
+    """The project folder, its input folder or the input files are missing."""

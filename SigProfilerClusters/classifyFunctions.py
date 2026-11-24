@@ -531,7 +531,7 @@ def pullVaf(project, project_path, variant_caller="standard", tumor_vaf_column=1
                 add_variant(store, chrom, pos, ref, alt, vaf)
 
     vafs = {}
-    if variant_caller not in ("standard", "caveman", "mutect2", "custom"):
+    if variant_caller not in constants.VARIANT_CALLERS:
         raise ValueError(
             "variant_caller must be 'standard', 'caveman', 'mutect2' or 'custom', not %r"
             % variant_caller

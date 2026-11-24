@@ -47,3 +47,9 @@ DENSITY_PEAK_THRESHOLD = 9.0
 # Event probability (SigProfilerClusters.eventProbability)
 EVENT_PROBABILITY_FLOOR = 1e-05
 """Smallest score written to the EVENT_PROBABILITY column."""
+
+# Values that analysis() accepts (audit finding 29)
+SUPPORTED_ANALYSES = ("all", "hotspot", "subClassify")
+SUPPORTED_CONTEXTS = ("96", "ID", "INDEL")
+VARIANT_CALLERS = ("standard", "caveman", "mutect2", "custom")
+INPUT_FILE_EXTENSIONS = ("txt", "vcf", "maf", "tsv")

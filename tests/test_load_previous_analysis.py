@@ -86,6 +86,7 @@ class TestSubClassifyNeedsThePreviousResults:
 
     def test_missing_previous_results_are_reported(self, tmp_path):
         (tmp_path / "input").mkdir()
+        (tmp_path / "input" / "standard.vcf").write_text("")  # the input folder must not be empty
         with pytest.raises(FileNotFoundError, match="imds.pickle"):
             analysis(
                 PROJECT, "GRCh37", "96", ["96"], str(tmp_path) + "/",

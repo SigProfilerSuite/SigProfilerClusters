@@ -5,7 +5,7 @@ Run with: pytest tests/test_analysis_guards.py -v
 
 import pytest
 
-from SigProfilerClusters.exceptions import InvalidParameterError
+from SigProfilerClusters.exceptions import InvalidParameterError, MissingSimulationsError
 from SigProfilerClusters.SigProfilerClusters import analysis
 
 
@@ -77,7 +77,15 @@ class TestStderrIsRestored:
         assert sys.stderr is original
 
     def test_the_err_file_is_still_created(self, tmp_path):
-        with pytest.raises(FileNotFoundError):
+        import os
+        import shutil
+
+        (tmp_path / "input").mkdir()
+        shutil.copy(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "input_vcf_sim", "standard", "standard.vcf"),
+            tmp_path / "input" / "standard.vcf",
+        )
+        with pytest.raises(MissingSimulationsError):  # fails after the log files exist
             analysis("proj", "GRCh37", "96", ["96"], str(tmp_path) + "/")
         assert len(list((tmp_path / "logs").glob("*.err"))) == 1
 

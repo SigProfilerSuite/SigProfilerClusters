@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 from . import constants
-from .exceptions import InvalidParameterError, MissingSimulationsError
+from .exceptions import (
+    InvalidParameterError,
+    MissingInputError,
+    MissingSimulationsError,
+)
 import os
 import re
 import argparse
@@ -21,6 +25,7 @@ import statistics
 import scipy
 import time
 import functools
+import numbers
 import sys
 
 # from SigProfilerExtractor import sigpro as sigs
@@ -39,6 +44,71 @@ import seaborn as sns
 # Values of output_type that analysis() accepts. None is what analysis="hotspot" and
 # analysis="subClassify" use internally to skip the calculation of the distances.
 SUPPORTED_OUTPUT_TYPES = ("all", None)
+
+def validate_arguments(analysis, contexts, simContext, windowSize, variant_caller):
+    """Checks the arguments of analysis() that have a closed set of valid values, before any
+    file is read, created or deleted. Raises InvalidParameterError naming the value and the valid
+    ones. (genome, output_type and chrom_based have their own checks.)"""
+    if analysis not in constants.SUPPORTED_ANALYSES:
+        raise InvalidParameterError(
+            "analysis must be one of %s, not %r"
+            % (", ".join(map(repr, constants.SUPPORTED_ANALYSES)), analysis)
+        )
+    if contexts not in constants.SUPPORTED_CONTEXTS:
+        raise InvalidParameterError(
+            "contexts must be one of %s, not %r"
+            % (", ".join(map(repr, constants.SUPPORTED_CONTEXTS)), contexts)
+        )
+    if not isinstance(simContext, (list, tuple)) or not all(
+        isinstance(name, str) and name for name in simContext
+    ):
+        raise InvalidParameterError(
+            "simContext must be a list with the name of the simulated context, "
+            "for example ['96'], not %r" % (simContext,)
+        )
+    if len(simContext) != 1:
+        raise InvalidParameterError(
+            "Please only provide one type of context for analysis (simContext has "
+            + str(len(simContext))
+            + ")."
+        )
+    if (
+        not isinstance(windowSize, numbers.Integral)
+        or isinstance(windowSize, bool)
+        or windowSize <= 0
+    ):
+        raise InvalidParameterError(
+            "windowSize must be a positive integer, not %r" % (windowSize,)
+        )
+    if variant_caller not in constants.VARIANT_CALLERS:
+        raise InvalidParameterError(
+            "variant_caller must be one of %s, not %r"
+            % (", ".join(map(repr, constants.VARIANT_CALLERS)), variant_caller)
+        )
+
+
+def check_input_folder(input_path):
+    """The project folder must exist and have an input folder with the mutation files (the
+    conversion reads them in every kind of analysis). Raises MissingInputError."""
+    if not isinstance(input_path, str) or not os.path.isdir(input_path):
+        raise MissingInputError(
+            "The project folder input_path does not exist: %r" % (input_path,)
+        )
+    input_folder = os.path.join(input_path, "input")
+    if not os.path.isdir(input_folder):
+        raise MissingInputError(
+            "The project folder %r has no 'input' folder with the mutation files "
+            "(expected %r)" % (input_path, input_folder)
+        )
+    files_folder = classifyFunctions.get_input_vcf_path(input_path)
+    if not any(
+        x != ".DS_Store" and os.path.isfile(os.path.join(files_folder, x))
+        for x in os.listdir(files_folder)
+    ):
+        raise MissingInputError(
+            "The input folder %r has no input files" % (input_folder,)
+        )
+
 
 # Seed used to choose the simulations of eventProbability (audit finding 11)
 EVENT_PROBABILITY_SEED = 0
@@ -786,6 +856,7 @@ def _run_analysis(
             "simulations using chrom_based=True, which will be used as the background model "
             "for the clustered analysis."
         )
+    validate_arguments(analysis, contexts, simContext, windowSize, variant_caller)
     # Conversions for NCBI chromosome names to standard notation
     ncbi_chrom = {
         "NC_000067.6": "1",
@@ -974,6 +1045,7 @@ def _run_analysis(
             + ", ".join(sorted(centromeres))
             + "."
         )
+    check_input_folder(input_path)
 
     # Collect the paths for the respective reference genome and quantiy the genome length and respective bins
     # using the default/provided window size
@@ -1198,7 +1270,10 @@ def _run_analysis(
                     project, vcf_path, genome, output_path, ncbi_chrom, log_file
                 )
             else:
-                print("File format not supported")
+                raise InvalidParameterError(
+                    "The input file format of %r is not supported; the supported ones are: %s"
+                    % (vcf_files[0], ", ".join(constants.INPUT_FILE_EXTENSIONS))
+                )
 
     # More than one type of analysis is specified. Currently no longer supported
     else:
