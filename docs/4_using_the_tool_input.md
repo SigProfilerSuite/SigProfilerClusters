@@ -74,8 +74,8 @@ $ SigProfilerClusters analysis project genome contexts simContext input_path
 | `includedVAFs` | Boolean | Indicates that VAF scores are present in the input files and should be used for subclassification. Default: `True` |
 | `includedCCFs` | Boolean | Indicates that Cancer Cell Fraction (CCF) estimates are used instead of VAFs. When `True`, set `includedVAFs=False`. Default: `False` |
 | `variant_caller` | String | Format of the VAF column in the input VCF. Accepted values: `"standard"` (default), `"caveman"`, `"mutect2"`, `"custom"` |
-| `tumor_vaf_column` | Integer | Only with `variant_caller="custom"`: 0-based index of the VCF column that holds the VAF. Default: `10`. Available in the Python API only (the command line does not expose it) |
-| `vaf_field` | String | Only with `variant_caller="custom"`: tag of the VAF inside the FORMAT/sample columns. Default: `"AF"`. Available in the Python API only (the command line does not expose it) |
+| `tumor_vaf_column` | Integer | Only with `variant_caller="custom"`: 0-based index of the VCF column that holds the VAF. Default: `10`. Command line: `--tumor_vaf_column` |
+| `vaf_field` | String | Only with `variant_caller="custom"`: tag of the VAF inside the FORMAT/sample columns. Default: `"AF"`. Command line: `--vaf_field` |
 | `windowSize` | Integer | Window size (in bp) for calculating mutation density in rainfall plots. Default: `1000000` |
 | `correction` | Boolean | Apply genome-wide mutational density correction to the IMD threshold. Default: `True` |
 | `probability` | Boolean | **Experimental.** Adds an `EVENT_PROBABILITY` score for each clustered event, based on the density of simulated mutations in its genomic window. The score is a product of density estimates, not a statistical probability, and the model is under review. For each sample a `<sample>_prob.vcf` is written next to the original `<sample>.vcf`, which is kept. Reproducible: the simulations used are chosen with a fixed seed. Files are under `[project_path]/output/clustered/`. Default: `False` |
