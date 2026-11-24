@@ -50,6 +50,37 @@ EVENT_PROBABILITY_FLOOR = 1e-05
 
 # Values that analysis() accepts (audit finding 29)
 SUPPORTED_ANALYSES = ("all", "hotspot", "subClassify")
-SUPPORTED_CONTEXTS = ("96", "ID", "INDEL")
+# Names of the mutation contexts that analysis() accepts as input (audit findings 118, 119).
+# The standard names are SBS96 and ID83; the others are accepted as aliases. DBS is not an
+# input: it is one of the outputs of SigProfilerClusters.
+SBS_CONTEXT = "SBS96"
+INDEL_CONTEXT = "ID83"
+CONTEXT_ALIASES = {
+    SBS_CONTEXT: ("SBS96", "96", "SBS"),
+    INDEL_CONTEXT: ("ID83", "ID", "83", "INDEL"),
+}
+
+
+def canonical_context(value):
+    """The standard name (SBS96 or ID83) of a context given with any of its aliases, or None
+    when the value is not a mutation context that analysis() supports."""
+    if not isinstance(value, str):
+        return None
+    for standard, aliases in CONTEXT_ALIASES.items():
+        if value in aliases:
+            return standard
+    return None
+
+
+def is_indel_context(value):
+    """True for ID83 and its aliases (ID, 83, INDEL)"""
+    return canonical_context(value) == INDEL_CONTEXT
+
+
+def is_sbs_context(value):
+    """True for SBS96 and its aliases (96, SBS)"""
+    return canonical_context(value) == SBS_CONTEXT
+
+
 VARIANT_CALLERS = ("standard", "caveman", "mutect2", "custom")
 INPUT_FILE_EXTENSIONS = ("txt", "vcf", "maf", "tsv")

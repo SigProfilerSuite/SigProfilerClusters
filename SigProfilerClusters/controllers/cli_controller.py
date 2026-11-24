@@ -22,14 +22,21 @@ def parse_arguments_clusters(args: List[str], description: str) -> argparse.Name
     # Obligatorios
     parser.add_argument("project", help="Project name")
     parser.add_argument("genome", help="Reference genome")
-    parser.add_argument("contexts", help="Mutational contexts")
+    parser.add_argument(
+        "contexts",
+        help="Mutational context: SBS96 or ID83 (aliases: 96, SBS, ID, 83, INDEL)",
+    )
     parser.add_argument("simContext", type=str2list, help="Simulated contexts (comma-separated)")
     parser.add_argument("input_path", help="Path to input directory")
 
     # Opcionales
     parser.add_argument("--output_type", default="all", choices=["all"])
     parser.add_argument("--analysis", default="all")
-    parser.add_argument("--interdistance", default="96")
+    parser.add_argument(
+        "--interdistance",
+        default="96",
+        help="Mutation types for the IMDs: same names as contexts, or SI (default: 96)",
+    )
     parser.add_argument("--exome", type=str2bool, nargs="?", const=True, default=False)
     parser.add_argument("--clustering_vaf", type=str2bool, nargs="?", const=True, default=False)
     parser.add_argument("--sortSims", type=str2bool, nargs="?", const=True, default=True)

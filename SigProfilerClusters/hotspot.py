@@ -1399,7 +1399,7 @@ def has_clustered_mutations(matrices, contexts):
     True if the matrix of the requested context has at least one mutation: "ID" for the
     ID (indel) analysis and "96" for SBS. An ID analysis has no "96" matrix (audit finding 12).
     """
-    key = "ID" if contexts in ("ID", "INDEL") else "96"
+    key = "ID" if constants.is_indel_context(contexts) else "96"
     matrix = matrices.get(key)
     return matrix is not None and bool(matrix.sum().sum() != 0)
 
@@ -1471,9 +1471,9 @@ def hotSpotAnalysis(
     simContext = "_".join(simContext)
     file_context = contexts
 
-    if contexts == "96":
+    if constants.is_sbs_context(contexts):
         matrix_file_suffix = ".SBS96."
-    elif contexts == "INDEL" or contexts == "ID":
+    elif constants.is_indel_context(contexts):
         matrix_file_suffix = ".ID83."
 
     if exome:
@@ -1510,7 +1510,7 @@ def hotSpotAnalysis(
         + "/"
     )
 
-    if file_context == "96":
+    if constants.is_sbs_context(file_context):
         vcf_path_clust = (
             ref_dir
             + "output/vcf_files"
@@ -2238,7 +2238,7 @@ def hotSpotAnalysis(
             upper_CIs_refinedFinal = pickle.load(handle)
     ############################################################################################################
     # Recollect samples names
-    if contexts == "96":
+    if constants.is_sbs_context(contexts):
         with open(
             ref_dir
             + "output/vcf_files"
@@ -2252,7 +2252,7 @@ def hotSpotAnalysis(
             first_line = f.readline()
             samples = first_line.strip().split()
             samples = samples[1:]
-    elif contexts == "INDEL" or contexts == "ID":
+    elif constants.is_indel_context(contexts):
         with open(
             ref_dir
             + "output/vcf_files"
@@ -2359,7 +2359,7 @@ def hotSpotAnalysis(
                     )
 
                     if clustered:
-                        if file_context == "96":
+                        if constants.is_sbs_context(file_context):
                             plottingFunctions.plot96_same(
                                 matrix_path,
                                 matrix_path_clustered,

@@ -52,11 +52,11 @@ class TestAnalysisValue:
 
 
 class TestContexts:
-    @pytest.mark.parametrize("value", ["DBS", "6144", "SBS96", "", None, 96])
+    @pytest.mark.parametrize("value", ["DBS", "6144", "SBS288", "", None, 96])
     def test_unsupported_contexts_are_rejected(self, tmp_path, value):
         _raises_invalid(tmp_path, "contexts", contexts=value)
 
-    @pytest.mark.parametrize("value", ["96", "ID", "INDEL"])
+    @pytest.mark.parametrize("value", ["96", "SBS96", "SBS", "ID", "ID83", "83", "INDEL"])
     def test_supported_contexts_pass(self, tmp_path, value):
         _passes_the_check(tmp_path, contexts=value)
 

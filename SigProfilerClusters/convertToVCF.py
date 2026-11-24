@@ -1,6 +1,8 @@
 import os
 import shutil
 
+from . import constants
+
 
 def checkPaths(currentPath, suffix):
     inputPath = os.path.join(currentPath, suffix)
@@ -33,7 +35,7 @@ def generateAllPaths(input_path, contexts):
     if not os.path.exists(nonClusteredOutputPath):
         os.makedirs(nonClusteredOutputPath)
 
-    if contexts == "ID":
+    if constants.is_indel_context(contexts):
         checkPaths(clusteredOutputPath, "ID")
         checkPaths(nonClusteredOutputPath, "ID")
     else:
@@ -67,7 +69,7 @@ def convertFiles(input_path, contexts, project, correction):
         "class2": "kataegis",
         "class3": "other",
     }
-    if contexts == "ID":
+    if constants.is_indel_context(contexts):
         if correction == True:
             idPath = os.path.join(
                 input_path,

@@ -90,7 +90,7 @@ def run_analysis_for_variant_callers_separate_steps(
         hp.analysis(
             project=caller,
             genome=genome,
-            contexts="96",
+            contexts="SBS96",
             simContext=["96"],
             input_path=input_path,
             analysis="all",
@@ -132,9 +132,16 @@ RERUN_SUBCLASSIFY_CALLER = "standard"
 def rerun_subclassify(caller, base_path, genome):
     """Audit finding 9: the subclassification can be repeated on the saved results, without
     the hotspot analysis (it used to fail with an undefined variable). The table that it
-    writes must be the same as in the first run. The path has no trailing slash."""
+    writes must be the same as in the first run. The path has no trailing slash. The context
+    is given with its alias "96" (the first run used "SBS96"): both mean the same."""
     # Without the trailing slash (audit finding 10)
     input_path = os.path.join(base_path, "input_vcf_sim", caller)
+    # The distance files of the first run are named with the standard context (audit finding 119)
+    assert os.path.isdir(
+        os.path.join(
+            input_path, "output", "simulations", f"{caller}_intradistance_original_{genome}_SBS96"
+        )
+    )
     clustered_vaf = os.path.join(
         input_path, "output", "vcf_files_corrected", f"{caller}_clustered",
         f"{caller}_clustered_vaf.txt",

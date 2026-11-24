@@ -45,7 +45,15 @@ import seaborn as sns
 # analysis="subClassify" use internally to skip the calculation of the distances.
 SUPPORTED_OUTPUT_TYPES = ("all", None)
 
-def validate_arguments(analysis, contexts, simContext, windowSize, variant_caller):
+_CONTEXT_NAMES = (
+    "SBS96 (also accepted: '96', 'SBS') or ID83 (also accepted: 'ID', '83', 'INDEL')"
+)
+_DBS_NOTE = " (DBS is one of the outputs of SigProfilerClusters, not an input context)"
+
+
+def validate_arguments(
+    analysis, contexts, simContext, windowSize, variant_caller, interdistance="96"
+):
     """Checks the arguments of analysis() that have a closed set of valid values, before any
     file is read, created or deleted. Raises InvalidParameterError naming the value and the valid
     ones. (genome, output_type and chrom_based have their own checks.)"""
@@ -54,10 +62,14 @@ def validate_arguments(analysis, contexts, simContext, windowSize, variant_calle
             "analysis must be one of %s, not %r"
             % (", ".join(map(repr, constants.SUPPORTED_ANALYSES)), analysis)
         )
-    if contexts not in constants.SUPPORTED_CONTEXTS:
+    if constants.canonical_context(contexts) is None:
         raise InvalidParameterError(
-            "contexts must be one of %s, not %r"
-            % (", ".join(map(repr, constants.SUPPORTED_CONTEXTS)), contexts)
+            "contexts must be %s, not %r%s"
+            % (_CONTEXT_NAMES, contexts, _DBS_NOTE if contexts == "DBS" else "")
+        )
+    if interdistance != "SI" and constants.canonical_context(interdistance) is None:
+        raise InvalidParameterError(
+            "interdistance must be %s or 'SI', not %r" % (_CONTEXT_NAMES, interdistance)
         )
     if not isinstance(simContext, (list, tuple)) or not all(
         isinstance(name, str) and name for name in simContext
@@ -740,7 +752,7 @@ def load_previous_analysis(project, ref_dir, contexts, correction, chrom_based):
             data + "imds_corrected" + suffix + ".pickle",
             data + "regions_corrected" + suffix + ".pickle",
         ]
-    if contexts != "ID":
+    if not constants.is_indel_context(contexts):
         vcf_dir = "output/vcf_files" + ("_corrected" if correction else "")
         required.append(
             ref_dir + vcf_dir + "/" + project + "_clustered/SNV/" + project + "_clustered.txt"
@@ -799,12 +811,12 @@ def _run_analysis(
     Parameters:
                             project	->	user provided project name (string)
                              genome	->	the reference genome used for the given analysis (string)
-                       contexts	->	the contexts used to calculate IMDs (string; ie "96")
+                       contexts	->	the context used to calculate IMDs: "SBS96" or "ID83" (aliases: "96", "SBS", "ID", "83", "INDEL"; string; DBS is not an input)
                      simContext	->	the simulated context used for the background model (list of strings; ie ["6144"])
                      input_path	->	the directory for the given project. This should contain the output from SigProfilerMatrixGenerator/Simulator (string)
                     output_type	->	only 'all' is supported (the distances of the original samples and of the simulations are calculated together; default='all')
                        analysis	->	optional parameter for specifying which type of analysis to perform. Helpful for when the IMDs have already been calcuated. (i.e. "all", "hotspot", "all"; default="all")
-              interdistance	->	the mutation types to calculate IMDs between (NOT STABLE; RECOMMENDED NOT TO USE; default='96')
+              interdistance	->	the mutation types to calculate IMDs between: the same names as contexts, or "SI" (NOT STABLE; RECOMMENDED NOT TO USE; default='96')
              clustering_vaf	->	optional paramater to save the VAF from the original mutation files. Required if performing subclassification (default=False; switched to True if subclassify=True)
                        sortSims	->	optional parameter that requires the function to sort the simulations or not (boolean; default=True)
                      extraction	[DEPRACATED]->	optional parameter to perform a signature extraction directly after the hotspot analysis (boolean; default=True)
@@ -856,7 +868,14 @@ def _run_analysis(
             "simulations using chrom_based=True, which will be used as the background model "
             "for the clustered analysis."
         )
-    validate_arguments(analysis, contexts, simContext, windowSize, variant_caller)
+    validate_arguments(
+        analysis, contexts, simContext, windowSize, variant_caller, interdistance
+    )
+    # From here on the contexts have their standard names (SBS96, ID83): they are part of the
+    # names of the files that are written and read
+    contexts = constants.canonical_context(contexts)
+    if interdistance != "SI":
+        interdistance = constants.canonical_context(interdistance)
     # Conversions for NCBI chromosome names to standard notation
     ncbi_chrom = {
         "NC_000067.6": "1",
@@ -1114,7 +1133,7 @@ def _run_analysis(
     if inter_label == "SI":
         interdistance = True
     else:
-        if inter_label == "INDEL" or inter_label == "ID":
+        if constants.is_indel_context(inter_label):
             inter = "ID"
         else:
             inter = "SNP"
@@ -1348,6 +1367,22 @@ def _run_analysis(
         + "/"
     )
 
+    if analysis == "hotspot" and not os.path.isdir(output_path_original):
+        # Results of an earlier version have "96"/"ID" in the names of the distance files
+        legacy = [
+            output_path_original.replace(
+                "_" + genome + "_" + file_context2 + "/",
+                "_" + genome + "_" + token + ("_exome" if exome else "") + "/",
+            )
+            for token in ("96", "ID", "INDEL")
+        ]
+        if any(os.path.isdir(path) for path in legacy):
+            raise MissingInputError(
+                "The distances of this project were saved by an earlier version, with the "
+                "names '96' or 'ID' instead of 'SBS96' or 'ID83'. Run analysis=\"all\" again "
+                "to recalculate them: " + output_path_original
+            )
+
     # Checks for simulated data. If there are not simulations, then inform the user to generate simulations first before
     # performing the clusters analysis:
     if not os.path.exists(simulation_path):
@@ -1518,7 +1553,7 @@ def _run_analysis(
     # Subclassify the clustered partition of mutations with the exception of indels. This function will also
     # produce the rainfall plots.
     if subClassify:
-        if contexts != "ID":
+        if not constants.is_indel_context(contexts):
             print("Beginning subclassification of clustered mutations...", end="")
             if includedVAFs:
                 classifyFunctions.pullVaf(

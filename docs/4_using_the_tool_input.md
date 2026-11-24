@@ -50,7 +50,7 @@ $ SigProfilerClusters analysis project genome contexts simContext input_path
 |-----------|---------------|-----------------------|
 | `project` | String | Unique name for the given project |
 | `genome` | String | Reference genome to use. Must be installed using [SigProfilerMatrixGenerator][1]. Supported genomes: GRCh37, GRCh38, mm9, mm10 |
-| `contexts` | String | Mutational context for SNV analysis. Accepted values: `"96"` (substitutions) or `"ID"` (indels) |
+| `contexts` | String | Mutational context of the analysis. Standard names: `"SBS96"` (substitutions) and `"ID83"` (indels). Also accepted: `"96"`, `"SBS"` for substitutions and `"ID"`, `"83"`, `"INDEL"` for indels. `"DBS"` is not an input: it is one of the outputs |
 | `simContext` | List of Strings | Mutation context used when generating the background model with [SigProfilerSimulator][2]. For example: `["288"]`, `["6144"]`, or `["96"]` |
 | `input_path` | String | Path to the directory containing the input files. Must end with `/` (e.g., `"path/to/the/input_file/"`) |
 
@@ -60,7 +60,7 @@ $ SigProfilerClusters analysis project genome contexts simContext input_path
 |-----------|---------------|-----------------------|
 | `analysis` | String | Analysis pipeline to run. Options: `"all"` (default), `"subClassify"`, `"hotspot"` |
 | `sortSims` | Boolean | Sort simulated files to ensure accuracy. Default: `True` |
-| `interdistance` | String | Mutation types for which to calculate IMDs. Use `"ID"` for indel analysis. Default: `"96"` |
+| `interdistance` | String | Mutation types for which to calculate IMDs. It takes the same names as `contexts` (`"SBS96"`, `"ID83"` and their aliases) or `"SI"`. Use `"ID83"` for indel analysis. Default: `"96"` |
 | `calculateIMD` | Boolean | Whether to calculate IMDs. Set to `False` to rerun subclassification only. Default: `True` |
 | `max_cpu` | Integer | Number of CPUs to use for parallel processing. Default: all available CPUs |
 | `subClassify` | Boolean | Subclassify clustered mutations into DBS, MBS, Omikli, and Kataegis (requires VAF scores in TCGA/Sanger format if `includedVAFs=True`). Default: `False` |
