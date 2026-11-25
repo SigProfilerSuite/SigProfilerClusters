@@ -45,6 +45,12 @@ import seaborn as sns
 # analysis="subClassify" use internally to skip the calculation of the distances.
 SUPPORTED_OUTPUT_TYPES = ("all", None)
 
+def log_stamp():
+    """Date and time for the names of the log files, so that two runs of the same project on
+    the same day do not overwrite each other's logs (audit finding 31)"""
+    return datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+
+
 _CONTEXT_NAMES = (
     "SBS96 (also accepted: '96', 'SBS') or ID83 (also accepted: 'ID', '83', 'INDEL')"
 )
@@ -1165,7 +1171,7 @@ def _run_analysis(
     if not os.path.exists(output_log_path):
         os.makedirs(output_log_path)
 
-    time_stamp = datetime.date.today()
+    time_stamp = log_stamp()
 
     log_file = (
         output_log_path
@@ -1174,7 +1180,7 @@ def _run_analysis(
         + "_"
         + genome
         + "_"
-        + str(time_stamp)
+        + time_stamp
         + ".out"
     )
     error_file = (
@@ -1184,7 +1190,7 @@ def _run_analysis(
         + "_"
         + genome
         + "_"
-        + str(time_stamp)
+        + time_stamp
         + ".err"
     )
     if os.path.exists(error_file):
