@@ -400,6 +400,41 @@ def distance_multiple_files_sims(
             out_file.close()
 
 
+def chromosome_rank(chrom):
+    """Sort key of a chromosome name in the usual order: 1, 2, ..., 22, X, Y, MT, then the rest"""
+    name = str(chrom)
+    if name.lower().startswith("chr"):
+        name = name[3:]
+    if name.isdigit():
+        return (0, int(name), "")
+    if name in ("X", "Y", "M", "MT"):
+        return (1, ("X", "Y", "M", "MT").index(name), "")
+    return (2, 0, name)
+
+
+def sort_distance_files(directory):
+    """Sorts the rows of every <sample>_<context>_intradistance.txt of a folder by chromosome
+    (natural order) and position.
+
+    The distances of an original sample are written by several workers, each one appending the
+    chromosomes that it was given, so the order of the rows depended on which worker finished
+    first and changed from one run to another, and with it the order of the tables and the
+    numbers of the groups built from them (audit findings 121 and 4). The rows of one
+    chromosome are already in position order; the sort is stable, so alleles of the same site
+    keep their order."""
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith("_intradistance.txt"):
+            continue
+        path = os.path.join(directory, name)
+        with open(path) as f:
+            rows = [line for line in f.read().splitlines() if line]
+        rows.sort(key=lambda row: (chromosome_rank(row.split("\t")[2]), int(row.split("\t")[3])))
+        temporary = path + ".sorting"
+        with open(temporary, "w") as f:
+            f.write("".join(row + "\n" for row in rows))
+        os.replace(temporary, path)
+
+
 def distance_one_file(
     sample_path,
     original_samples,
@@ -1471,6 +1506,10 @@ def _run_analysis(
             if not r.successful():
                 # Raises an error when not successful
                 r.get()
+
+        # The workers appended to the same file of each sample in the order in which they
+        # finished: put its rows in a fixed order (audit finding 121)
+        sort_distance_files(output_path_original)
 
         # Parallelize and calculate distances for the simulated samples
         if processors > len(simulations):
