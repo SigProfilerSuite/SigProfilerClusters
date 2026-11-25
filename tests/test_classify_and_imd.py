@@ -125,3 +125,9 @@ class TestRefineIMD:
         sims = _sims()
         result = _refine(list(rng.integers(0, 400, size=400)), sims)
         assert 30 <= result[2] <= 50  # average count in the first bin
+
+    def test_refined_interval_contains_the_average_of_the_simulations(self):
+        rng = np.random.default_rng(1)
+        result = _refine(list(rng.integers(0, 400, size=400)), _sims())
+        middle, q_value, avg_sim, std_sim, upper, lower = result
+        assert lower <= avg_sim <= upper

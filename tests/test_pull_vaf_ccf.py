@@ -9,7 +9,7 @@ import pytest
 from clustered_table_helpers import HEADER, PROJECT, row, setup
 from SigProfilerClusters.classifyFunctions import pullCCF, pullVaf
 
-NO_VAF = "-1.5"  # value written when the input file carries no usable VAF/CCF
+NO_VAF = "nan"  # value written when the input file carries no usable VAF/CCF (audit finding 6)
 
 
 def _vcf(*records):
@@ -158,6 +158,40 @@ class TestPullVafStandard:
         pullVaf(PROJECT, str(tmp_path) + "/", "standard")
         assert _values(clustered) == [NO_VAF]
 
+    def test_af_in_the_info_column_is_read(self, tmp_path):
+        # audit finding 6: it used to be ignored and recorded as missing
+        clustered = _table(tmp_path, [row(100, "C", "T")])
+        _write_vcf(tmp_path, "S1.vcf", _vcf(_snv("1", 100, "C", "T", info="DP=20;AF=0.31")))
+        pullVaf(PROJECT, str(tmp_path) + "/", "standard")
+        assert _values(clustered) == ["0.31"]
+
+    def test_tvaf_is_not_mistaken_for_vaf(self, tmp_path):
+        clustered = _table(tmp_path, [row(100, "C", "T")])
+        _write_vcf(tmp_path, "S1.vcf", _vcf(_snv("1", 100, "C", "T", info="TVAF=0.9;VAF=0.31")))
+        pullVaf(PROJECT, str(tmp_path) + "/", "standard")
+        assert _values(clustered) == ["0.31"]
+
+    def test_only_tvaf_present_means_no_vaf(self, tmp_path):
+        clustered = _table(tmp_path, [row(100, "C", "T")])
+        _write_vcf(tmp_path, "S1.vcf", _vcf(_snv("1", 100, "C", "T", info="TVAF=0.9")))
+        pullVaf(PROJECT, str(tmp_path) + "/", "standard")
+        assert _values(clustered) == [NO_VAF]
+
+    def test_missing_vafs_are_reported_per_sample(self, tmp_path):
+        _table(tmp_path, [row(100, "C", "T"), row(200, "G", "A")])
+        _write_vcf(tmp_path, "S1.vcf", _vcf(_snv("1", 100, "C", "T", info="VAF=0.3"), _snv("1", 200, "G", "A", info="DP=9")))
+        with pytest.warns(UserWarning, match="1 of 2 clustered mutations of sample S1 have no VAF"):
+            pullVaf(PROJECT, str(tmp_path) + "/", "standard")
+
+    def test_no_warning_when_every_vaf_is_known(self, tmp_path):
+        import warnings
+
+        _table(tmp_path, [row(100, "C", "T")])
+        _write_vcf(tmp_path, "S1.vcf", _vcf(_snv("1", 100, "C", "T", info="VAF=0.3")))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            pullVaf(PROJECT, str(tmp_path) + "/", "standard")
+
     def test_chr_prefixed_vcf_still_matches_the_table(self, tmp_path):
         clustered = _table(tmp_path, [row(100, "C", "T")])
         _write_vcf(tmp_path, "S1.vcf", _vcf(_snv("chr1", 100, "C", "T", info="VAF=0.35")))
@@ -194,12 +228,13 @@ class TestPullVafCaveman:
         pullVaf(PROJECT, str(tmp_path) + "/", "caveman")
         assert _values(clustered) == ["0.5"]
 
-    def test_file_without_vaf_stops_reading_and_the_mutation_is_missing(self, tmp_path, capsys):
-        _table(tmp_path, [row(100, "C", "T")])
-        _write_vcf(tmp_path, "S1.vcf", _vcf(_snv("1", 100, "C", "T", last="not_a_number")))
-        with pytest.raises(KeyError):
-            pullVaf(PROJECT, str(tmp_path) + "/", "caveman")
-        assert "There does not seem to be VAF scores" in capsys.readouterr().out
+    def test_a_line_without_vaf_does_not_stop_the_file(self, tmp_path):
+        # audit finding 6: the first line without VAF used to stop the whole file
+        clustered = _table(tmp_path, [row(100, "C", "T"), row(200, "G", "A")])
+        records = _vcf(_snv("1", 100, "C", "T", last="not_a_number"), _snv("1", 200, "G", "A", last="a:b:0.5"))
+        _write_vcf(tmp_path, "S1.vcf", records)
+        pullVaf(PROJECT, str(tmp_path) + "/", "caveman")
+        assert _values(clustered) == [NO_VAF, "0.5"]
 
 
 # ─── pullVaf: mutect2 and custom ─────────────────────────────
@@ -240,19 +275,30 @@ class TestPullVafMutect2:
         pullVaf(PROJECT, str(tmp_path) + "/", "mutect2")
         assert _values(clustered) == ["0.2", "0.2"]
 
-    def test_record_without_af_in_format_is_skipped(self, tmp_path):
-        _table(tmp_path, [row(100, "C", "T")])
+    def test_record_without_af_in_format_has_an_unknown_vaf(self, tmp_path):
+        clustered = _table(tmp_path, [row(100, "C", "T")])
         _write_vcf(tmp_path, "S1.vcf", _mutect_vcf(_mutect_rec("1", 100, "C", "T", "GT:DP", "0/1:40")))
-        with pytest.raises(KeyError):
-            pullVaf(PROJECT, str(tmp_path) + "/", "mutect2")
+        pullVaf(PROJECT, str(tmp_path) + "/", "mutect2")
+        assert _values(clustered) == [NO_VAF]
 
-    def test_file_without_tumor_column_is_skipped(self, tmp_path, capsys):
+    def test_file_without_a_tumor_column_raises_a_clear_error(self, tmp_path):
         _table(tmp_path, [row(100, "C", "T")])
         text = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE\n1\t100\t.\tC\tT\t.\tPASS\t.\tGT:AF\t0/1:0.3\n"
         _write_vcf(tmp_path, "S1.vcf", text)
-        with pytest.raises(KeyError):
+        with pytest.raises(ValueError, match="tumor sample column of S1.vcf was not found"):
             pullVaf(PROJECT, str(tmp_path) + "/", "mutect2")
-        assert "TUMOR column not found in S1.vcf" in capsys.readouterr().out
+
+    def test_tumor_sample_named_in_the_header_is_used(self, tmp_path):
+        # audit finding 6: a tumor sample that is not called TUMOR
+        clustered = _table(tmp_path, [row(100, "C", "T")])
+        text = (
+            "##tumor_sample=SAMPLE_01\n"
+            + "\t".join(["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", "NORMAL_01", "SAMPLE_01"])
+            + "\n1\t100\t.\tC\tT\t.\tPASS\t.\tGT:AF\t0/0:0.9\t0/1:0.3\n"
+        )
+        _write_vcf(tmp_path, "S1.vcf", text)
+        pullVaf(PROJECT, str(tmp_path) + "/", "mutect2")
+        assert _values(clustered) == ["0.3"]
 
 
 class TestPullVafCustom:
@@ -278,12 +324,11 @@ class TestPullVafCustom:
         pullVaf(PROJECT, str(tmp_path) + "/", "custom", tumor_vaf_column=10)
         assert _values(clustered) == ["0.44"]
 
-    def test_column_beyond_the_header_skips_the_file(self, tmp_path, capsys):
+    def test_column_beyond_the_header_raises_a_clear_error(self, tmp_path):
         _table(tmp_path, [row(100, "C", "T")])
         _write_vcf(tmp_path, "S1.vcf", self._vcf("GT:AF", "0/1:0.44"))
-        with pytest.raises(KeyError):
+        with pytest.raises(ValueError, match="Tumor column 20 not found in the header of S1.vcf"):
             pullVaf(PROJECT, str(tmp_path) + "/", "custom", tumor_vaf_column=20)
-        assert "Tumor column 20 not found in header of S1.vcf" in capsys.readouterr().out
 
 
 # ─── common behavior ─────────────────────────────────────────
@@ -305,9 +350,8 @@ class TestPullVafCommon:
         pullVaf(PROJECT, str(tmp_path) + "/", "standard")
         assert _values(clustered) == ["0.35"]
 
-    def test_unknown_variant_caller_fails(self, tmp_path):
-        # there is no explicit validation: the VAF dictionary is simply never created
+    def test_unknown_variant_caller_fails_with_a_clear_error(self, tmp_path):
         _table(tmp_path, [row(100, "C", "T")])
         _write_vcf(tmp_path, "S1.vcf", _vcf(_snv("1", 100, "C", "T", info="VAF=0.35")))
-        with pytest.raises(UnboundLocalError):
+        with pytest.raises(ValueError, match="variant_caller must be"):
             pullVaf(PROJECT, str(tmp_path) + "/", "unknown_caller")

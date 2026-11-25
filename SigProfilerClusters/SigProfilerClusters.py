@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+from . import constants
+from .exceptions import (
+    InvalidParameterError,
+    MissingInputError,
+    MissingSimulationsError,
+)
 import os
 import re
 import argparse
@@ -18,6 +24,8 @@ import numpy as np
 import statistics
 import scipy
 import time
+import functools
+import numbers
 import sys
 
 # from SigProfilerExtractor import sigpro as sigs
@@ -26,10 +34,98 @@ from . import plottingFunctions
 from SigProfilerMatrixGenerator.scripts import MutationMatrixGenerator as matRef
 from . import convertToVCF
 import random
+import pickle
 import warnings
 import pandas as pd
 import bisect
 import seaborn as sns
+
+
+# Values of output_type that analysis() accepts. None is what analysis="hotspot" and
+# analysis="subClassify" use internally to skip the calculation of the distances.
+SUPPORTED_OUTPUT_TYPES = ("all", None)
+
+def log_stamp():
+    """Date and time for the names of the log files, so that two runs of the same project on
+    the same day do not overwrite each other's logs (audit finding 31)"""
+    return datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+
+
+_CONTEXT_NAMES = (
+    "SBS96 (also accepted: '96', 'SBS') or ID83 (also accepted: 'ID', '83', 'INDEL')"
+)
+_DBS_NOTE = " (DBS is one of the outputs of SigProfilerClusters, not an input context)"
+
+
+def validate_arguments(
+    analysis, contexts, simContext, windowSize, variant_caller, interdistance="96"
+):
+    """Checks the arguments of analysis() that have a closed set of valid values, before any
+    file is read, created or deleted. Raises InvalidParameterError naming the value and the valid
+    ones. (genome, output_type and chrom_based have their own checks.)"""
+    if analysis not in constants.SUPPORTED_ANALYSES:
+        raise InvalidParameterError(
+            "analysis must be one of %s, not %r"
+            % (", ".join(map(repr, constants.SUPPORTED_ANALYSES)), analysis)
+        )
+    if constants.canonical_context(contexts) is None:
+        raise InvalidParameterError(
+            "contexts must be %s, not %r%s"
+            % (_CONTEXT_NAMES, contexts, _DBS_NOTE if contexts == "DBS" else "")
+        )
+    if interdistance != "SI" and constants.canonical_context(interdistance) is None:
+        raise InvalidParameterError(
+            "interdistance must be %s or 'SI', not %r" % (_CONTEXT_NAMES, interdistance)
+        )
+    if not isinstance(simContext, (list, tuple)) or not all(
+        isinstance(name, str) and name for name in simContext
+    ):
+        raise InvalidParameterError(
+            "simContext must be a list with the name of the simulated context, "
+            "for example ['96'], not %r" % (simContext,)
+        )
+    if len(simContext) != 1:
+        raise InvalidParameterError(
+            "Please only provide one type of context for analysis (simContext has "
+            + str(len(simContext))
+            + ")."
+        )
+    if (
+        not isinstance(windowSize, numbers.Integral)
+        or isinstance(windowSize, bool)
+        or windowSize <= 0
+    ):
+        raise InvalidParameterError(
+            "windowSize must be a positive integer, not %r" % (windowSize,)
+        )
+    if variant_caller not in constants.VARIANT_CALLERS:
+        raise InvalidParameterError(
+            "variant_caller must be one of %s, not %r"
+            % (", ".join(map(repr, constants.VARIANT_CALLERS)), variant_caller)
+        )
+
+
+def check_input_folder(input_path):
+    """The project folder must exist and have an input folder with the mutation files (the
+    conversion reads them in every kind of analysis). Raises MissingInputError."""
+    if not isinstance(input_path, str) or not os.path.isdir(input_path):
+        raise MissingInputError(
+            "The project folder input_path does not exist: %r" % (input_path,)
+        )
+    input_folder = os.path.join(input_path, "input")
+    if not os.path.isdir(input_folder):
+        raise MissingInputError(
+            "The project folder %r has no 'input' folder with the mutation files "
+            "(expected %r)" % (input_path, input_folder)
+        )
+    files_folder = classifyFunctions.get_input_vcf_path(input_path)
+    if not any(
+        x != ".DS_Store" and os.path.isfile(os.path.join(files_folder, x))
+        for x in os.listdir(files_folder)
+    ):
+        raise MissingInputError(
+            "The input folder %r has no input files" % (input_folder,)
+        )
 
 
 # Seed used to choose the simulations of eventProbability (audit finding 11)
@@ -246,13 +342,8 @@ def distance_multiple_files_sims(
             sample = final_distances_filtered[0][1]
             file_sample = sample.split("_")[:-1]
             file_sample = ("_").join([x for x in file_sample])
-            try:
-                if not os.path.exists(
-                    output_path + file_sample + "/"
-                ):  # Necessary because the multi-processing throws an unpredictable error otherwise.
-                    os.makedirs(output_path + file_sample + "/")
-            except:
-                pass
+            # exist_ok: several processes may create the same folder
+            os.makedirs(output_path + file_sample + "/", exist_ok=True)
 
             # Open the current sample file and start iterating through the final distances
             # If a new sample is reached, close the current file and open the new one
@@ -280,11 +371,7 @@ def distance_multiple_files_sims(
                     if sample.split("_")[0] != file_sample:
                         file_sample = sample.split("_")[:-1]
                         file_sample = ("_").join([x for x in file_sample])
-                        try:
-                            if not os.path.exists(output_path + file_sample + "/"):
-                                os.makedirs(output_path + file_sample + "/")
-                        except:
-                            pass
+                        os.makedirs(output_path + file_sample + "/", exist_ok=True)
                         out_file = open(
                             output_path
                             + file_sample
@@ -298,11 +385,7 @@ def distance_multiple_files_sims(
                         )
                         print("\t".join([str(y) for y in x]), file=out_file)
                     else:
-                        try:
-                            if not os.path.exists(output_path + file_sample + "/"):
-                                os.makedirs(output_path + file_sample + "/")
-                        except:
-                            pass
+                        os.makedirs(output_path + file_sample + "/", exist_ok=True)
                         out_file = open(
                             output_path
                             + file_sample
@@ -315,6 +398,41 @@ def distance_multiple_files_sims(
                         )
                         print("\t".join([str(y) for y in x]), file=out_file)
             out_file.close()
+
+
+def chromosome_rank(chrom):
+    """Sort key of a chromosome name in the usual order: 1, 2, ..., 22, X, Y, MT, then the rest"""
+    name = str(chrom)
+    if name.lower().startswith("chr"):
+        name = name[3:]
+    if name.isdigit():
+        return (0, int(name), "")
+    if name in ("X", "Y", "M", "MT"):
+        return (1, ("X", "Y", "M", "MT").index(name), "")
+    return (2, 0, name)
+
+
+def sort_distance_files(directory):
+    """Sorts the rows of every <sample>_<context>_intradistance.txt of a folder by chromosome
+    (natural order) and position.
+
+    The distances of an original sample are written by several workers, each one appending the
+    chromosomes that it was given, so the order of the rows depended on which worker finished
+    first and changed from one run to another, and with it the order of the tables and the
+    numbers of the groups built from them (audit findings 121 and 4). The rows of one
+    chromosome are already in position order; the sort is stable, so alleles of the same site
+    keep their order."""
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith("_intradistance.txt"):
+            continue
+        path = os.path.join(directory, name)
+        with open(path) as f:
+            rows = [line for line in f.read().splitlines() if line]
+        rows.sort(key=lambda row: (chromosome_rank(row.split("\t")[2]), int(row.split("\t")[3])))
+        temporary = path + ".sorting"
+        with open(temporary, "w") as f:
+            f.write("".join(row + "\n" for row in rows))
+        os.replace(temporary, path)
 
 
 def distance_one_file(
@@ -363,147 +481,156 @@ def distance_one_file(
         with open(original_samples + file) as f:
 
             lines = [line.strip().split() for line in f]
-        original_lines = sorted(lines, key=lambda x: (x[0], int(x[2])))
+        sorted_lines = sorted(lines, key=lambda x: (x[0], int(x[2])))
 
-        # Audit finding 7: several alleles at one position of a sample (multi-allelic sites or
-        # duplicated records) are one site for the IMD. The IMD is computed between distinct
-        # sites and every allele of a site keeps the distance of its site; before, each allele
-        # got an IMD of 0, which hid its distance to the neighbors and made the rows disappear.
-        site_rows = {}
-        for line in original_lines:
-            site_rows.setdefault((line[0], line[2]), []).append(line)
-        original_lines = [rows[0] for rows in site_rows.values()]
+        # Audit finding 5: the file of a chromosome holds the mutations of every sample, and the
+        # IMD of the first and last mutation of a sample, and of a sample with a single
+        # mutation, used to be computed with a neighbour of another sample. Each sample is now
+        # processed on its own, so no distance crosses a sample boundary.
+        lines_by_sample = {}
+        for line in sorted_lines:
+            lines_by_sample.setdefault(line[0], []).append(line)
+        for original_lines in lines_by_sample.values():
 
-        def write_site(x, out_file):
-            """Write the row of a site once per allele found at that position."""
-            for allele in site_rows[(x[1], x[3])]:
-                row = list(x)
-                row[4], row[5] = allele[3], allele[4]
-                print("\t".join([str(y) for y in row]), file=out_file)
+            # Audit finding 7: several alleles at one position of a sample (multi-allelic sites or
+            # duplicated records) are one site for the IMD. The IMD is computed between distinct
+            # sites and every allele of a site keeps the distance of its site; before, each allele
+            # got an IMD of 0, which hid its distance to the neighbors and made the rows disappear.
+            site_rows = {}
+            for line in original_lines:
+                site_rows.setdefault((line[0], line[2]), []).append(line)
+            original_lines = [rows[0] for rows in site_rows.values()]
 
-        # Ensure there are at least two mutations present for a given chromosome
-        if len(original_lines) > 1:
-            centro_start = centromeres[genome][original_lines[0][1]][
-                0
-            ]  # Position of the start of the centromere
-            centro_end = centromeres[genome][original_lines[0][1]][
-                1
-            ]  # Position of the end of the centromere
+            def write_site(x, out_file):
+                """Write the row of a site once per allele found at that position."""
+                for allele in site_rows[(x[1], x[3])]:
+                    row = list(x)
+                    row[4], row[5] = allele[3], allele[4]
+                    print("\t".join([str(y) for y in row]), file=out_file)
 
-            # Calculate the minimum IMDs ensuring that the samples, chromosome, and chromosome arms match
-            # distances = [[int(y[2])-(int(x[2])-2+len(x[3])+len(x[4]))] + x + ['c'] if x[0] == y[0] and int(y[2])<centro_start else [int(y[2])-(int(x[2])-2+len(x[3])+len(x[4]))] + x +['c'] if x[0] == y[0] and centro_end<int(x[2]) else 'aa' if x[0] != y[0] else [int(x[2]) - (int(original_lines[original_lines.index(x)-1][2])-2+len(original_lines[original_lines.index(x)-1][3])+len(original_lines[original_lines.index(x)-1][4]))] + x +['d'] for x,y in zip(original_lines, original_lines[1:])]
-            distances = [
-                (
-                    [int(y[2]) - (int(x[2]) - 2 + len(x[3]) + len(x[4]))] + x + ["c"]
-                    if x[0] == y[0] and int(y[2]) < centro_start
-                    else (
-                        [int(y[2]) - (int(x[2]) - 2 + len(x[3]) + len(x[4]))]
-                        + x
-                        + ["c"]
-                        if x[0] == y[0] and centro_end < int(x[2])
-                        else [
-                            abs(
-                                int(x[2])
-                                - (
-                                    int(original_lines[original_lines.index(x) - 1][2])
-                                    - 2
-                                    + len(
-                                        original_lines[original_lines.index(x) - 1][3]
-                                    )
-                                    + len(
-                                        original_lines[original_lines.index(x) - 1][4]
+            # Ensure there are at least two mutations present for a given chromosome
+            if len(original_lines) > 1:
+                centro_start = centromeres[genome][original_lines[0][1]][
+                    0
+                ]  # Position of the start of the centromere
+                centro_end = centromeres[genome][original_lines[0][1]][
+                    1
+                ]  # Position of the end of the centromere
+
+                # Calculate the minimum IMDs ensuring that the samples, chromosome, and chromosome arms match
+                # distances = [[int(y[2])-(int(x[2])-2+len(x[3])+len(x[4]))] + x + ['c'] if x[0] == y[0] and int(y[2])<centro_start else [int(y[2])-(int(x[2])-2+len(x[3])+len(x[4]))] + x +['c'] if x[0] == y[0] and centro_end<int(x[2]) else 'aa' if x[0] != y[0] else [int(x[2]) - (int(original_lines[original_lines.index(x)-1][2])-2+len(original_lines[original_lines.index(x)-1][3])+len(original_lines[original_lines.index(x)-1][4]))] + x +['d'] for x,y in zip(original_lines, original_lines[1:])]
+                distances = [
+                    (
+                        [int(y[2]) - (int(x[2]) - 2 + len(x[3]) + len(x[4]))] + x + ["c"]
+                        if x[0] == y[0] and int(y[2]) < centro_start
+                        else (
+                            [int(y[2]) - (int(x[2]) - 2 + len(x[3]) + len(x[4]))]
+                            + x
+                            + ["c"]
+                            if x[0] == y[0] and centro_end < int(x[2])
+                            else [
+                                abs(
+                                    int(x[2])
+                                    - (
+                                        int(original_lines[original_lines.index(x) - 1][2])
+                                        - 2
+                                        + len(
+                                            original_lines[original_lines.index(x) - 1][3]
+                                        )
+                                        + len(
+                                            original_lines[original_lines.index(x) - 1][4]
+                                        )
                                     )
                                 )
-                            )
-                        ]
-                        + x
-                        + ["d"]
+                            ]
+                            + x
+                            + ["d"]
+                        )
                     )
-                )
-                for x, y in zip(original_lines, original_lines[1:])
-            ]
-            distances_new = distances[:] + [
-                [distances[-1][0]] + original_lines[-1] + [distances[-1][-1]]
-            ]
-            # final_distances = ['bb' if x[1] != y[1] else [min(x[0],y[0])]+y[1:-1]+[x[0]] if x[0] != 'a' and y[0] != 'a' and x[-1] != 'd' else [y[0]] + y[1:-1]+[y[0]] if x[-1] == 'd' and x[0] != 'a' and y[0] != 'a' else x if y[0] == 'a' and x[0] != 'a' else y if x[0] == 'a' and y[0] != 'a' else 'bb' for x,y in zip(distances_new[:], distances_new[1:])]
-            final_distances = [
-                (
-                    [x[0]] + x[1:-1] + [x[0]]
-                    if x[1] != y[1] and y[1] == "a"
-                    else (
-                        [min(x[0], y[0])] + y[1:-1] + [x[0]]
-                        if x[0] != "a" and y[0] != "a" and x[-1] != "d"
+                    for x, y in zip(original_lines, original_lines[1:])
+                ]
+                distances_new = distances[:] + [
+                    [distances[-1][0]] + original_lines[-1] + [distances[-1][-1]]
+                ]
+                # final_distances = ['bb' if x[1] != y[1] else [min(x[0],y[0])]+y[1:-1]+[x[0]] if x[0] != 'a' and y[0] != 'a' and x[-1] != 'd' else [y[0]] + y[1:-1]+[y[0]] if x[-1] == 'd' and x[0] != 'a' and y[0] != 'a' else x if y[0] == 'a' and x[0] != 'a' else y if x[0] == 'a' and y[0] != 'a' else 'bb' for x,y in zip(distances_new[:], distances_new[1:])]
+                final_distances = [
+                    (
+                        [x[0]] + x[1:-1] + [x[0]]
+                        if x[1] != y[1] and y[1] == "a"
                         else (
-                            [y[0]] + y[1:-1] + [y[0]]
-                            if x[-1] == "d" and x[0] != "a" and y[0] != "a"
+                            [min(x[0], y[0])] + y[1:-1] + [x[0]]
+                            if x[0] != "a" and y[0] != "a" and x[-1] != "d"
                             else (
-                                x
-                                if y[0] == "a" and x[0] != "a"
-                                else y if x[0] == "a" and y[0] != "a" else "bb"
+                                [y[0]] + y[1:-1] + [y[0]]
+                                if x[-1] == "d" and x[0] != "a" and y[0] != "a"
+                                else (
+                                    x
+                                    if y[0] == "a" and x[0] != "a"
+                                    else y if x[0] == "a" and y[0] != "a" else "bb"
+                                )
                             )
                         )
                     )
+                    for x, y in zip(distances_new[:], distances_new[1:])
+                ]
+                final_distances = [distances_new[0]] + final_distances
+                final_distances_filtered = [
+                    x for x in final_distances if x[0] != "b" and x[0] != "a"
+                ]
+
+                if (
+                    len(final_distances_filtered) == 0
+                ):  # Continue if there are no IMDs (ex. only two mutation are a chromosome and occured on different arms)
+                    continue
+
+                # Open the current sample file and start iterating through the final distances
+                # If a new sample is reached, close the current file and open the new one
+                # The files are written under the simulations/ folder with the following fiels:
+                # <IMD> <Sample_sim#> <chrom> <pos> <ref> <alt> <plotIMD_for_rainfall plots>
+                sample = final_distances_filtered[0][1]
+                out_file = open(
+                    output_path_original
+                    + sample
+                    + "_"
+                    + file_context2
+                    + "_intradistance.txt",
+                    "a",
+                    10000000,
                 )
-                for x, y in zip(distances_new[:], distances_new[1:])
-            ]
-            final_distances = [distances_new[0]] + final_distances
-            final_distances_filtered = [
-                x for x in final_distances if x[0] != "b" and x[0] != "a"
-            ]
+                for x in final_distances_filtered:
+                    if x[1] == sample:
+                        write_site(x, out_file)
+                    else:
+                        out_file.close()
+                        sample = x[1]
+                        out_file = open(
+                            output_path_original
+                            + sample
+                            + "_"
+                            + file_context2
+                            + "_intradistance.txt",
+                            "a",
+                            10000000,
+                        )
+                        write_site(x, out_file)
+                out_file.close()
 
-            if (
-                len(final_distances_filtered) == 0
-            ):  # Continue if there are no IMDs (ex. only two mutation are a chromosome and occured on different arms)
-                continue
+            elif len(original_lines) == 1:
+                # Handle the case when there is only one mutation
+                sample = original_lines[0][0]
+                out_file = (
+                    output_path_original
+                    + sample
+                    + "_"
+                    + file_context2
+                    + "_intradistance.txt"
+                )
 
-            # Open the current sample file and start iterating through the final distances
-            # If a new sample is reached, close the current file and open the new one
-            # The files are written under the simulations/ folder with the following fiels:
-            # <IMD> <Sample_sim#> <chrom> <pos> <ref> <alt> <plotIMD_for_rainfall plots>
-            sample = final_distances_filtered[0][1]
-            out_file = open(
-                output_path_original
-                + sample
-                + "_"
-                + file_context2
-                + "_intradistance.txt",
-                "a",
-                10000000,
-            )
-            for x in final_distances_filtered:
-                if x[1] == sample:
-                    write_site(x, out_file)
-                else:
-                    out_file.close()
-                    sample = x[1]
-                    out_file = open(
-                        output_path_original
-                        + sample
-                        + "_"
-                        + file_context2
-                        + "_intradistance.txt",
-                        "a",
-                        10000000,
-                    )
-                    write_site(x, out_file)
-            out_file.close()
-
-        elif len(original_lines) == 1:
-            # Handle the case when there is only one mutation
-            sample = original_lines[0][0]
-            out_file = (
-                output_path_original
-                + sample
-                + "_"
-                + file_context2
-                + "_intradistance.txt"
-            )
-
-            with open(out_file, "a", 10000000) as out_file:
-                # Add a new column with the value 1 million
-                # no neighbor: every allele of the site gets the singleton distance
-                for mutation in site_rows[(sample, original_lines[0][2])]:
-                    print("\t".join([str(y) for y in [1000000] + mutation]), file=out_file)
+                with open(out_file, "a", 10000000) as out_file:
+                    # Add a new column with the value 1 million
+                    # no neighbor: every allele of the site gets the singleton distance
+                    for mutation in site_rows[(sample, original_lines[0][2])]:
+                        print("\t".join([str(y) for y in [1000000] + mutation]), file=out_file)
 
 
 def eventProbability(
@@ -642,8 +769,8 @@ def eventProbability(
                             for x in imds
                         ]
                         probs = np.prod(np.array(probs))
-                        if probs < 1e-05:
-                            probs = 1e-05
+                        if probs < constants.EVENT_PROBABILITY_FLOOR:
+                            probs = constants.EVENT_PROBABILITY_FLOOR
 
                         for i, x in eventMuts.iterrows():
                             x = list(x)[:-1] + [probs]
@@ -651,7 +778,43 @@ def eventProbability(
                 out.close()
 
 
-def analysis(
+def load_previous_analysis(project, ref_dir, contexts, correction, chrom_based):
+    """
+    Loads what a previous run of the hotspot analysis saved and the subclassification
+    needs (analysis="subClassify"): the dense regions and the corrected IMD cutoffs of every
+    sample. Without correction both are empty, as in a run that does not correct. Raises a
+    FileNotFoundError that lists every missing file before anything is loaded.
+    """
+    data = ref_dir + "output/simulations/data/"
+    suffix = "_chrom" if chrom_based else ""
+    required = [data + "imds" + suffix + ".pickle"]
+    if correction:
+        required += [
+            data + "imds_corrected" + suffix + ".pickle",
+            data + "regions_corrected" + suffix + ".pickle",
+        ]
+    if not constants.is_indel_context(contexts):
+        vcf_dir = "output/vcf_files" + ("_corrected" if correction else "")
+        required.append(
+            ref_dir + vcf_dir + "/" + project + "_clustered/SNV/" + project + "_clustered.txt"
+        )
+    missing = [path for path in required if not os.path.exists(path)]
+    if missing:
+        raise FileNotFoundError(
+            'analysis="subClassify" needs the results of a previous run of the hotspot '
+            'analysis (run analysis="hotspot" or analysis="all" first). Missing files:\n  '
+            + "\n  ".join(missing)
+        )
+    if not correction:
+        return {}, {}
+    with open(data + "regions_corrected" + suffix + ".pickle", "rb") as handle:
+        regions = pickle.load(handle)
+    with open(data + "imds_corrected" + suffix + ".pickle", "rb") as handle:
+        imds = pickle.load(handle)
+    return regions, imds
+
+
+def _run_analysis(
     project,
     genome,
     contexts,
@@ -689,12 +852,12 @@ def analysis(
     Parameters:
                             project	->	user provided project name (string)
                              genome	->	the reference genome used for the given analysis (string)
-                       contexts	->	the contexts used to calculate IMDs (string; ie "96")
+                       contexts	->	the context used to calculate IMDs: "SBS96" or "ID83" (aliases: "96", "SBS", "ID", "83", "INDEL"; string; DBS is not an input)
                      simContext	->	the simulated context used for the background model (list of strings; ie ["6144"])
                      input_path	->	the directory for the given project. This should contain the output from SigProfilerMatrixGenerator/Simulator (string)
-                    output_type	->	optional parameter for specifying which type of files to calculate IMDs for (simulations, original, etc.; default='all')
+                    output_type	->	only 'all' is supported (the distances of the original samples and of the simulations are calculated together; default='all')
                        analysis	->	optional parameter for specifying which type of analysis to perform. Helpful for when the IMDs have already been calcuated. (i.e. "all", "hotspot", "all"; default="all")
-              interdistance	->	the mutation types to calculate IMDs between (NOT STABLE; RECOMMENDED NOT TO USE; default='96')
+              interdistance	->	the mutation types to calculate IMDs between: the same names as contexts, or "SI" (NOT STABLE; RECOMMENDED NOT TO USE; default='96')
              clustering_vaf	->	optional paramater to save the VAF from the original mutation files. Required if performing subclassification (default=False; switched to True if subclassify=True)
                        sortSims	->	optional parameter that requires the function to sort the simulations or not (boolean; default=True)
                      extraction	[DEPRACATED]->	optional parameter to perform a signature extraction directly after the hotspot analysis (boolean; default=True)
@@ -728,14 +891,32 @@ def analysis(
             subClassify=True. Note that the IMD plots do not have the resolution to show the corrected IMDs if correction=True. The corrected mutations are shown in the SBS96, but the
             distances are not used in the histogram.
     """
+    if output_type not in SUPPORTED_OUTPUT_TYPES:
+        raise InvalidParameterError(
+            f"output_type {output_type!r} is not supported; valid values: "
+            + ", ".join(repr(x) for x in SUPPORTED_OUTPUT_TYPES)
+            + " (the distances of the original samples and of the simulations are "
+            "always calculated together)"
+        )
+
     if includedCCFs:
         includedVAFs = False
 
     if chrom_based:
-        print(
-            "The parameter chrom_based has been deprecated within the SigProfilerClusters pipeline. Please rerun with chrom_based=False. Note, you may still run the simulations using chrom_based=True, which will be used as the background model for the clusterd analysis."
+        raise InvalidParameterError(
+            "The parameter chrom_based has been deprecated within the SigProfilerClusters "
+            "pipeline. Please rerun with chrom_based=False. Note, you may still run the "
+            "simulations using chrom_based=True, which will be used as the background model "
+            "for the clustered analysis."
         )
-        sys.exit()
+    validate_arguments(
+        analysis, contexts, simContext, windowSize, variant_caller, interdistance
+    )
+    # From here on the contexts have their standard names (SBS96, ID83): they are part of the
+    # names of the files that are written and read
+    contexts = constants.canonical_context(contexts)
+    if interdistance != "SI":
+        interdistance = constants.canonical_context(interdistance)
     # Conversions for NCBI chromosome names to standard notation
     ncbi_chrom = {
         "NC_000067.6": "1",
@@ -914,6 +1095,18 @@ def analysis(
         },
     }
 
+    # The centromere positions are needed by the distance calculation of every genome: fail now,
+    # with the genomes that can be used, instead of with a KeyError after the work was done
+    if genome not in centromeres:
+        raise InvalidParameterError(
+            "The genome "
+            + repr(genome)
+            + " is not supported. Supported genomes: "
+            + ", ".join(sorted(centromeres))
+            + "."
+        )
+    check_input_folder(input_path)
+
     # Collect the paths for the respective reference genome and quantiy the genome length and respective bins
     # using the default/provided window size
     chrom_path, ref_dir = matRef.reference_paths(genome)
@@ -981,7 +1174,7 @@ def analysis(
     if inter_label == "SI":
         interdistance = True
     else:
-        if inter_label == "INDEL" or inter_label == "ID":
+        if constants.is_indel_context(inter_label):
             inter = "ID"
         else:
             inter = "SNP"
@@ -990,6 +1183,13 @@ def analysis(
 
     if ref_dir[-1] != "/":  # Ensure a trailing backslash to the given path
         ref_dir += "/"
+
+    if analysis == "subClassify":
+        # Reuse the results of a previous run; fails now, before anything is deleted,
+        # if some of them is missing
+        regions, imds = load_previous_analysis(
+            project, ref_dir, contexts, correction, chrom_based
+        )
 
     path_suffix = ""
     if correction:
@@ -1006,7 +1206,7 @@ def analysis(
     if not os.path.exists(output_log_path):
         os.makedirs(output_log_path)
 
-    time_stamp = datetime.date.today()
+    time_stamp = log_stamp()
 
     log_file = (
         output_log_path
@@ -1015,7 +1215,7 @@ def analysis(
         + "_"
         + genome
         + "_"
-        + str(time_stamp)
+        + time_stamp
         + ".out"
     )
     error_file = (
@@ -1025,7 +1225,7 @@ def analysis(
         + "_"
         + genome
         + "_"
-        + str(time_stamp)
+        + time_stamp
         + ".err"
     )
     if os.path.exists(error_file):
@@ -1130,12 +1330,18 @@ def analysis(
                     project, vcf_path, genome, output_path, ncbi_chrom, log_file
                 )
             else:
-                print("File format not supported")
+                raise InvalidParameterError(
+                    "The input file format of %r is not supported; the supported ones are: %s"
+                    % (vcf_files[0], ", ".join(constants.INPUT_FILE_EXTENSIONS))
+                )
 
     # More than one type of analysis is specified. Currently no longer supported
     else:
-        print("Please only provide one type of context for analysis")
-        sys.exit()
+        raise InvalidParameterError(
+            "Please only provide one type of context for analysis (simContext has "
+            + str(len(simContext))
+            + ")."
+        )
 
     # Organize additional paths/files and corresponding suffixes
     file_context2 = inter_label
@@ -1202,22 +1408,36 @@ def analysis(
         + "/"
     )
 
+    if analysis == "hotspot" and not os.path.isdir(output_path_original):
+        # Results of an earlier version have "96"/"ID" in the names of the distance files
+        legacy = [
+            output_path_original.replace(
+                "_" + genome + "_" + file_context2 + "/",
+                "_" + genome + "_" + token + ("_exome" if exome else "") + "/",
+            )
+            for token in ("96", "ID", "INDEL")
+        ]
+        if any(os.path.isdir(path) for path in legacy):
+            raise MissingInputError(
+                "The distances of this project were saved by an earlier version, with the "
+                "names '96' or 'ID' instead of 'SBS96' or 'ID83'. Run analysis=\"all\" again "
+                "to recalculate them: " + output_path_original
+            )
+
     # Checks for simulated data. If there are not simulations, then inform the user to generate simulations first before
     # performing the clusters analysis:
     if not os.path.exists(simulation_path):
-        print(
+        raise MissingSimulationsError(
             "There are no simulated data present for this project. Please generate simulations before running SigProfilerClusters.\n"
             "\tThe package can be installed via pip:\n\t\t\t$ pip install SigProfilerSimulator\n"
             "\n\tand used within a python3 sessions as follows:\n\t\t\t$ python3\n\t\t\t>> from SigProfilerSimulator import SigProfilerSimulator as sigSim\n"
             "\t\t\t>> sigSim.SigProfilerSimulator(project, project_path, genome, contexts=['6144'], simulations=100)\n\n"
             "\tFor a complete list of parameters, visit the github repo (https://github.com/AlexandrovLab/SigProfilerSimulator) or the documentation page (https://osf.io/usxjz/wiki/home/)"
         )
-        sys.exit()
     if len(os.listdir(simulation_path)) < 100:
-        print(
+        raise MissingSimulationsError(
             "Please simulate a minimum of 100 simulations per sample to successfully run SigProfilerClusters."
         )
-        sys.exit()
 
     # Collect simulation files and distribute them into the available processors for parallelization
     simulations = os.listdir(simulation_path)
@@ -1239,12 +1459,7 @@ def analysis(
     # saves time if the downstream analysis needs to be rerun.
     if output_type != None:
         print("Calculating mutational distances...", end="", flush=True)
-    if output_type == "original":
-        distance_one_file(
-            original_samples, output_path_original, file_context2, genome, centromeres
-        )
-
-    elif output_type == "all":
+    if output_type == "all":
         # Remove old path iterations if they exist
         if os.path.exists(output_path):
             shutil.rmtree(output_path)
@@ -1292,6 +1507,10 @@ def analysis(
                 # Raises an error when not successful
                 r.get()
 
+        # The workers appended to the same file of each sample in the order in which they
+        # finished: put its rows in a fixed order (audit finding 121)
+        sort_distance_files(output_path_original)
+
         # Parallelize and calculate distances for the simulated samples
         if processors > len(simulations):
             max_seed = len(simulations)
@@ -1328,25 +1547,12 @@ def analysis(
                 # Raises an error when not successful
                 r.get()
 
-    elif output_type == "simulations":
-        if os.path.exists(output_path):
-            shutil.rmtree(output_path)
-        distance_multiple_files_sims(
-            output_path,
-            simulation_path,
-            simulation_path_sorted,
-            file_context2,
-            genome,
-            centromeres,
-            sortSims,
-        )
-    # elif :
-    # 	print("Output type is not a valid option.")
-    # 	sys.exit()
     if output_type != None:
         print("Completed!", flush=True)  # IMD calculations have successfully completed.
 
     # Begin the hotspot analysis. This function will also produce the IMD distribution and spectra plots
+    skipped_samples = {}
+    skipped_table = ref_dir + "output/skipped_samples" + path_suffix + ".txt"
     if analysis == "hotspot" or analysis == "all":
         original = True
         firstRun = True
@@ -1373,6 +1579,14 @@ def analysis(
             chrom_based,
             correction,
         )
+        skipped_samples = dict(getattr(hotspot, "skipped_samplesFinal", {}))
+        if regions is None:
+            # No clustered mutations: not an error, but there is nothing to subclassify or plot
+            print(
+                "No clustered mutations were found. Skipping the subclassification and the plots."
+            )
+            hotspot.report_skipped_samples(skipped_samples, skipped_table, log_file)
+            return
 
     # Allows for the clustered muutations to automactically run through the extraction.
     # This option is not recommended, but rather the extractions should be run separately after
@@ -1384,18 +1598,16 @@ def analysis(
     # Subclassify the clustered partition of mutations with the exception of indels. This function will also
     # produce the rainfall plots.
     if subClassify:
-        if contexts != "ID":
+        if not constants.is_indel_context(contexts):
             print("Beginning subclassification of clustered mutations...", end="")
             if includedVAFs:
                 classifyFunctions.pullVaf(
-                    project, input_path, variant_caller, tumor_vaf_column, vaf_field, correction
+                    project, ref_dir, variant_caller, tumor_vaf_column, vaf_field, correction
                 )
-                sys.stderr.close()
-                sys.stderr = open(error_file, "a")
                 classifyFunctions.findClustersOfClusters(
                     project,
                     chrom_based,
-                    input_path,
+                    ref_dir,
                     windowSize,
                     chromLengths,
                     regions,
@@ -1406,15 +1618,12 @@ def analysis(
                     correction,
                     includedCCFs,
                 )
-                sys.stderr.close()
             elif includedCCFs:
-                classifyFunctions.pullCCF(project, input_path, correction)
-                sys.stderr.close()
-                sys.stderr = open(error_file, "a")
+                classifyFunctions.pullCCF(project, ref_dir, correction)
                 classifyFunctions.findClustersOfClusters(
                     project,
                     chrom_based,
-                    input_path,
+                    ref_dir,
                     windowSize,
                     chromLengths,
                     regions,
@@ -1425,12 +1634,11 @@ def analysis(
                     correction,
                     includedCCFs,
                 )
-                sys.stderr.close()
             else:
                 classifyFunctions.findClustersOfClusters_noVAF(
                     project,
                     chrom_based,
-                    input_path,
+                    ref_dir,
                     windowSize,
                     chromLengths,
                     regions,
@@ -1440,9 +1648,7 @@ def analysis(
                     imds,
                     correction,
                 )
-                sys.stderr.close()
             print("Completed!", flush=True)
-        sys.stderr = open(error_file, "a")
 
         # Generate the rainfall plots.
         if plotRainfall:
@@ -1450,7 +1656,7 @@ def analysis(
             plottingFunctions.rainfall(
                 chrom_based,
                 project,
-                input_path,
+                ref_dir,
                 chrom_path,
                 chromLengths,
                 centromeres,
@@ -1465,8 +1671,8 @@ def analysis(
             print("Subclassification of clustered mutations has finished!")
 
         # Generates output paths for final results saved as VCF files
-        convertToVCF.generateAllPaths(input_path, contexts)
-        convertToVCF.convertFiles(input_path, contexts, project, correction)
+        convertToVCF.generateAllPaths(ref_dir, contexts)
+        convertToVCF.convertFiles(ref_dir, contexts, project, correction)
 
         # Add probability to all clustered mutations using same window sized-bins
         if probability:
@@ -1477,14 +1683,28 @@ def analysis(
                 flush=True,
             )
             eventProbability(
-                project, input_path, output_path, output_path_original, windowSize, k=10
+                project, ref_dir, output_path, output_path_original, windowSize, k=10
             )
             print("done")
 
-    sys.stderr.close()
     end = time.time() - start
+    hotspot.report_skipped_samples(skipped_samples, skipped_table, log_file)
     print(
         "SigProfilerClusters successfully finished! Elapsed time: "
         + str(round(end, 2))
         + " seconds."
     )
+
+
+@functools.wraps(_run_analysis)
+def analysis(*args, **kwargs):
+    # _run_analysis redirects sys.stderr to the .err file of the run. Whatever happens
+    # (success, error or exit), the original stream is given back and the file closed.
+    original_stderr = sys.stderr
+    try:
+        return _run_analysis(*args, **kwargs)
+    finally:
+        redirected = sys.stderr
+        sys.stderr = original_stderr
+        if redirected is not original_stderr:
+            redirected.close()

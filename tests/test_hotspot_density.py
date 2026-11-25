@@ -45,32 +45,34 @@ class TestDensityCorrection:
     def test_simulations_without_mutations_have_no_regions(self):
         assert _correction([3 * WINDOW + 500] * 200, {str(i): [] for i in range(12)}) == []
 
-    @pytest.mark.xfail(
-        reason="densities are computed from the last simulation instead of densityMuts, "
-        "so a window that is far denser than the simulations is never reported",
-        strict=True,
-    )
     def test_window_far_denser_than_the_simulations_is_a_region(self):
         muts = [3 * WINDOW + 500] * 500 + [w * WINDOW + 500 for w in range(10) if w != 3] * 10
         assert len(_correction(muts, _simulations())) == 1
 
-    @pytest.mark.xfail(
-        reason="the result does not depend on densityMuts (see the previous test)",
-        strict=True,
-    )
     def test_regions_depend_on_the_original_mutations(self):
         first = _correction([3 * WINDOW + 500] * 5000, _simulations())
         second = _correction([9 * WINDOW + 500] * 5000, _simulations())
         assert first != second
 
-    @pytest.mark.xfail(
-        reason="random.sample(..., 10) needs at least 10 simulations, so the correction "
-        "fails for a run with fewer",
-        raises=ValueError,
-        strict=True,
-    )
     def test_fewer_than_ten_simulations(self):
         assert isinstance(_correction([3 * WINDOW + 500] * 200, _simulations(n=5)), list)
+
+    def test_region_is_the_right_edge_of_the_dense_window(self):
+        muts = [3 * WINDOW + 500] * 500 + [w * WINDOW + 500 for w in range(10) if w != 3] * 10
+        assert _correction(muts, _simulations()) == [4 * WINDOW]
+
+    def test_dense_first_window_is_found(self):
+        muts = [500] * 500 + [w * WINDOW + 500 for w in range(1, 10)] * 10
+        assert _correction(muts, _simulations()) == [WINDOW]
+
+    def test_dense_window_far_along_the_genome_is_found(self):
+        muts = [50 * WINDOW + 500] * 500
+        assert _correction(muts, _simulations()) == [51 * WINDOW]
+
+    def test_uses_all_simulations_and_is_deterministic(self):
+        muts = [3 * WINDOW + 500] * 500 + [w * WINDOW + 500 for w in range(10) if w != 3] * 10
+        sims = _simulations(n=40)
+        assert _correction(muts, sims) == _correction(muts, dict(reversed(sims.items())))
 
 
 # ─── getResults ──────────────────────────────────────────────
@@ -104,6 +106,7 @@ RESULT_NAMES = [
     "std_simCounts_corrected",
     "upper_CIs_refined_corrected",
     "lower_CIs_refined_corrected",
+    "skipped_samples",
 ]
 STORED = [name for name in RESULT_NAMES if name != "regions"]
 

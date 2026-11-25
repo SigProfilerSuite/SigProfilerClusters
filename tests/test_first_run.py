@@ -188,3 +188,32 @@ class TestRegionCorrectedCutoff:
 
     def test_region_without_a_corrected_cutoff_uses_the_sample_cutoff(self, tmp_path, sims):
         assert self._run(tmp_path, sims, [EDGE], {"S1": {}})[N_CLUSTERED] == 0
+
+
+# ─── simulated interval (audit finding 20) ───────────────────
+
+
+class TestSimulatedInterval:
+    """first_run reports, for each IMD bin, the interval that contains the central 95% of the
+    simulated counts. It used to be the 5th-95th percentile (a 90% interval)."""
+
+    def _simulations(self):
+        # simulation i has i distances of 3 bp: the bin [2, 4) holds the counts 0, 1, ... 99
+        return [[3] * i + [1_000_000] for i in range(100)]
+
+    def _intervals(self, tmp_path):
+        rng = np.random.default_rng(1)
+        distances = [int(x) for x in rng.integers(1, 100, size=50)] + _background(rng, 50)
+        clustered, non_clustered = tmp_path / "c", tmp_path / "n"
+        clustered.mkdir()
+        non_clustered.mkdir()
+        sims = self._simulations()
+        result = first_run(
+            sims, _lines(distances), distances, str(clustered) + "/", str(non_clustered) + "/",
+            "S1", True, len(sims), PROJECT, GENOME, False,
+        )
+        lower, upper = result[8], result[9]
+        return lower[1], upper[1]  # bin [2, 4)
+
+    def test_the_interval_holds_the_central_95_percent_of_the_simulations(self, tmp_path):
+        assert self._intervals(tmp_path) == (2, 97)

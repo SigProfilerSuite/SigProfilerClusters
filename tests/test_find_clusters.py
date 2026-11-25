@@ -40,13 +40,8 @@ def _vrow(pos, vaf, **kwargs):
     return _row(pos, vaf=vaf, **kwargs)
 
 
-# findClustersOfClusters never processes the last event of the table (see the xfail test
-# below). Every test table therefore ends with this event, which is never reported.
-SENTINEL = [_vrow(900000, 0.4), _vrow(900001, 0.4)]
-
-
-def _run(tmp_path, rows, correction=False, ccf=False, imds=None, sentinel=True):
-    rows = list(rows) + (SENTINEL if sentinel else [])
+def _run(tmp_path, rows, correction=False, ccf=False, imds=None):
+    rows = list(rows)
     clustered = setup(
         tmp_path,
         rows,
@@ -73,6 +68,31 @@ def _run(tmp_path, rows, correction=False, ccf=False, imds=None, sentinel=True):
 
 
 # ─── event classes with similar VAFs ─────────────────────────
+
+
+class TestKataegisWithOneGap:
+    """audit finding 14: four or more mutations with a single distance above 1 are class II"""
+
+    @pytest.mark.parametrize(
+        "positions",
+        [
+            [1000, 1001, 1002, 1004],  # IMDs [1, 1, 2]
+            [1000, 1001, 1003, 1004],  # [1, 2, 1]
+            [1000, 1001, 1002, 1052],  # [1, 1, 50]
+        ],
+    )
+    def test_four_or_more_with_one_gap_is_class2(self, tmp_path, positions):
+        rows = [_vrow(p, 0.40) for p in positions] + [_vrow(500000, 0.4), _vrow(500001, 0.4)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class2") == positions
+        assert "class1c" not in _populated(clustered)
+
+    def test_three_mutations_with_one_gap_stay_omikli(self, tmp_path):
+        rows = [_vrow(1000, 0.4), _vrow(1001, 0.4), _vrow(1003, 0.4)]
+        rows += [_vrow(500000, 0.4), _vrow(500001, 0.4)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class1c") == [1000, 1001, 1003]
+        assert _positions(clustered, "class2") == []
 
 
 class TestEventClassesWithSimilarVaf:
@@ -232,6 +252,42 @@ class TestVafResegmentation:
         assert _positions(clustered, "class1c") == [1050, 1100]
 
 
+NAN = float("nan")
+
+
+class TestUnknownVaf:
+    """A missing VAF is stored as NaN and is not compared (audit finding 6): it never makes an
+    event discordant or concordant, and the known VAFs are compared consecutively."""
+
+    def test_a_pair_without_vaf_is_still_an_event(self, tmp_path):
+        clustered = _run(tmp_path, [_vrow(1000, NAN), _vrow(1001, NAN)])
+        assert _populated(clustered) == ["class1", "class1a"]
+
+    def test_an_unknown_vaf_next_to_a_known_one_does_not_declassify_the_event(self, tmp_path):
+        clustered = _run(tmp_path, [_vrow(1000, 0.4), _vrow(1001, NAN)])
+        assert _populated(clustered) == ["class1", "class1a"]
+
+    def test_an_unknown_vaf_inside_a_class2_event_keeps_it_whole(self, tmp_path):
+        rows = [_vrow(1000, 0.4), _vrow(1050, 0.4), _vrow(1100, NAN), _vrow(1150, 0.4)]
+        assert _positions(_run(tmp_path, rows), "class2") == [1000, 1050, 1100, 1150]
+
+    def test_an_unknown_vaf_does_not_hide_the_discordance_of_its_neighbours(self, tmp_path):
+        rows = [_vrow(1000, 0.2), _vrow(1001, NAN), _vrow(1002, 0.8)]
+        clustered = _run(tmp_path, rows)
+        assert _entries(clustered, "class1b") == []
+        # the unknown one stays with the first, the discordant one is left out of the event
+        assert _positions(clustered, "class1a") == [1000, 1001]
+        assert _positions(clustered, "class3") == [1002]
+
+    def test_discordant_known_vafs_still_declassify_with_an_unknown_one_present(self, tmp_path):
+        rows = [_vrow(1000, 0.2), _vrow(1001, 0.6), _vrow(1002, NAN)]
+        assert _entries(_run(tmp_path, rows), "class1b") == []
+
+    def test_unknown_vaf_is_written_as_nan(self, tmp_path):
+        clustered = _run(tmp_path, [_vrow(1000, NAN), _vrow(1001, NAN)])
+        assert [cols[VAF_COL] for cols in _entries(clustered, "class1a")] == ["nan", "nan"]
+
+
 # ─── grouping of mutations into events ───────────────────────
 
 
@@ -311,8 +367,7 @@ class TestOutputs:
         _run(tmp_path, [_vrow(1000, 0.4), _vrow(1001, 0.4), _vrow(1002, 0.4)])
         path = tmp_path / "output" / "simulations" / "data" / "originalCounts.pickle"
         with open(str(path), "rb") as f:
-            # three mutations plus the two of the trailing sentinel event
-            assert pickle.load(f) == {"S1": 5}
+            assert pickle.load(f) == {"S1": 3}
 
     def test_clustered_stats_pickle_is_written(self, tmp_path):
         clustered = _run(tmp_path, [_vrow(1000, 0.4), _vrow(1001, 0.4)])
@@ -342,13 +397,28 @@ class TestOutputs:
 
 
 class TestLastEvent:
-    @pytest.mark.xfail(
-        reason="findClustersOfClusters has no block that closes the last event after the "
-        "read loop (findClustersOfClusters_noVAF has one), so the last event of the table "
-        "is silently dropped",
-        strict=True,
-    )
+    """The last event of the table is classified like any other (audit finding 3: it used to be
+    dropped because only a blank separator closed an event)."""
+
     def test_last_event_of_the_table_is_classified(self, tmp_path):
         rows = [_vrow(1000, 0.4), _vrow(1001, 0.4)]
-        clustered = _run(tmp_path, rows, sentinel=False)
+        clustered = _run(tmp_path, rows)
         assert _positions(clustered, "class1a") == [1000, 1001]
+
+    def test_last_event_is_classified_after_other_events(self, tmp_path):
+        rows = [_vrow(1000, 0.4), _vrow(1001, 0.4), _vrow(500000, 0.4), _vrow(500050, 0.4)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class1a") == [1000, 1001]
+        assert _positions(clustered, "class1c") == [500000, 500050]
+
+    def test_last_event_of_a_sample_and_of_the_table(self, tmp_path):
+        rows = [
+            _vrow(1000, 0.4, sample="S1"), _vrow(1001, 0.4, sample="S1"),
+            _vrow(2000, 0.4, sample="S2"), _vrow(2001, 0.4, sample="S2"),
+        ]
+        clustered = _run(tmp_path, rows, imds={"S1": IMD_CUTOFF, "S2": IMD_CUTOFF})
+        assert [cols[1] for cols in _entries(clustered, "class1a")] == ["S1", "S1", "S2", "S2"]
+
+    def test_last_event_with_a_discordant_vaf_is_declassified_not_dropped(self, tmp_path):
+        rows = [_vrow(1000, 0.2), _vrow(1001, 0.6)]
+        assert _positions(_run(tmp_path, rows), "class3") == [1000, 1001]

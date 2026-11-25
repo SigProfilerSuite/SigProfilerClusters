@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from . import constants
 import os
 import numpy as np
 import statistics
@@ -3001,7 +3002,7 @@ def rainfall(
 
     projectPath_parent2 = project_path
     projectPath_parent = project_path
-    if contexts != "ID":
+    if not constants.is_indel_context(contexts):
         projectPath = (
             project_path
             + "output/vcf_files"
@@ -3029,7 +3030,7 @@ def rainfall(
     if correction:
         plot_suffix += "_corrected"
 
-    if contexts != "ID":
+    if not constants.is_indel_context(contexts):
         classes = [
             "Class IA",
             "Class II",
@@ -3533,10 +3534,13 @@ def rainfall(
                     if str(chrom) in [
                         str(x) for x in allMutations[subclass].loc[sample].index
                     ]:
+                        # Audit finding 113: select with a list of keys so that pandas always
+                        # returns a DataFrame; a single matching row came back as a Series and
+                        # pos.loc[(sample, chrom), ...] below raised IndexingError.
                         try:
-                            pos = allMutations[subclass].loc[sample, str(chrom)]
+                            pos = allMutations[subclass].loc[[(sample, str(chrom))]]
                         except:
-                            pos = allMutations[subclass].loc[sample, int(chrom)]
+                            pos = allMutations[subclass].loc[[(sample, int(chrom))]]
 
                         # try:
                         if True:
@@ -3551,7 +3555,7 @@ def rainfall(
                                 starts = list(starts)
                                 imds_recorded = list(imds_recorded)
                                 IMDsPlotRecorded = list(IMDsPlotRecorded)
-                            if contexts != "ID":
+                            if not constants.is_indel_context(contexts):
                                 newGroup = [0]
                                 if (
                                     subclass != "Non-clust"
@@ -3594,7 +3598,7 @@ def rainfall(
                                 # else:
                                 # 	# plotIMDs = [[x,y] for x,y in zip(starts, imds) if y <= imdsDataSample[sample.split(".")[0]] or y < 10000]
                                 # 	plotIMDs = [[x,y] for x,y in zip(starts, minIMDs)]
-                                if contexts != "ID":
+                                if not constants.is_indel_context(contexts):
                                     if subclass == "Class III":
                                         plotIMDs = [
                                             [x, int(y)]

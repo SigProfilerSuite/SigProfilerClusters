@@ -2,6 +2,7 @@
 
 import sys
 from SigProfilerClusters.controllers import cli_controller
+from SigProfilerClusters.exceptions import SigProfilerClustersError
 
 
 def main_function():
@@ -19,7 +20,11 @@ def main_function():
     controller = cli_controller.CliController()
 
     if command == "analysis":
-        controller.dispatch_sigProfilerClusters(args)
+        try:
+            controller.dispatch_sigProfilerClusters(args)
+        except SigProfilerClustersError as error:
+            print("Error: " + str(error), file=sys.stderr)
+            sys.exit(1)
 
 
 def print_usage(commands):

@@ -4,6 +4,7 @@ by fakes that write a chosen output, so no genome is needed.
 Run with: pytest tests/test_variant_caller_strictness.py -v
 """
 
+
 import pytest
 
 import test_variant_caller as tvc

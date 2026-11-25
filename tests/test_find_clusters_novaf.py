@@ -102,18 +102,60 @@ class TestEventClasses:
         assert {cols[-1] for cols in _entries(clustered, "class1a")} == {"ClassIA"}
 
 
+class TestKataegisWithOneGap:
+    """audit finding 14: four or more mutations with a single distance above 1 are class II"""
+
+    @pytest.mark.parametrize(
+        "positions",
+        [
+            [1000, 1001, 1002, 1004],  # IMDs [1, 1, 2]
+            [1000, 1001, 1003, 1004],  # [1, 2, 1]
+            [1000, 1001, 1002, 1052],  # [1, 1, 50]
+            [1000, 1002, 1003, 1004, 1005],  # [2, 1, 1, 1]
+        ],
+    )
+    def test_four_or_more_with_one_gap_is_class2(self, tmp_path, positions):
+        rows = [_row(p) for p in positions] + [_row(500000), _row(500001)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class2") == positions
+        assert "class1c" not in _populated(clustered)
+
+    def test_event_at_the_end_of_the_table_is_class2(self, tmp_path):
+        rows = [_row(1000), _row(1001)] + [_row(p) for p in (500000, 500001, 500002, 500004)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class2") == [500000, 500001, 500002, 500004]
+
+    def test_three_mutations_with_one_gap_stay_omikli(self, tmp_path):
+        rows = [_row(1000), _row(1001), _row(1003), _row(500000), _row(500001)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class1c") == [1000, 1001, 1003]
+        assert _positions(clustered, "class2") == []
+
+    def test_four_adjacent_mutations_stay_mbs(self, tmp_path):
+        rows = [_row(p) for p in (1000, 1001, 1002, 1003)] + [_row(500000), _row(500001)]
+        clustered = _run(tmp_path, rows)
+        assert _positions(clustered, "class1b") == [1000, 1001, 1002, 1003]
+        assert _positions(clustered, "class2") == []
+
+
+class TestHasClass2Pattern:
+    @pytest.mark.parametrize(
+        "gaps, size, expected",
+        [(0, 2, False), (0, 5, False), (1, 2, False), (1, 3, False), (1, 4, True),
+         (1, 9, True), (2, 3, True), (2, 4, True)],
+    )
+    def test_pattern(self, gaps, size, expected):
+        assert classifyFunctions.has_class2_pattern(gaps, size) is expected
+
+
 class TestSingleMutationEvent:
     def test_single_mutation_event_in_the_middle_is_dropped(self, tmp_path):
         rows = [_row(1000), _row(500000), _row(900000), _row(900001)]
         clustered = _run(tmp_path, rows)
         assert _positions(clustered, "class1") == [900000, 900001]
 
-    @pytest.mark.xfail(
-        reason="a one-mutation event at the end of the table skips the 'len(lines) == 1' "
-        "guard of the main loop and is written as class1/class1b (MBS)",
-        strict=True,
-    )
     def test_single_mutation_event_at_the_end_is_dropped(self, tmp_path):
+        # audit finding 3: it used to be written as class1/class1b (MBS)
         rows = [_row(1000), _row(1001), _row(500000)]
         clustered = _run(tmp_path, rows)
         assert _positions(clustered, "class1") == [1000, 1001]

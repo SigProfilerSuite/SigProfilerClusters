@@ -22,14 +22,21 @@ def parse_arguments_clusters(args: List[str], description: str) -> argparse.Name
     # Obligatorios
     parser.add_argument("project", help="Project name")
     parser.add_argument("genome", help="Reference genome")
-    parser.add_argument("contexts", help="Mutational contexts")
+    parser.add_argument(
+        "contexts",
+        help="Mutational context: SBS96 or ID83 (aliases: 96, SBS, ID, 83, INDEL)",
+    )
     parser.add_argument("simContext", type=str2list, help="Simulated contexts (comma-separated)")
     parser.add_argument("input_path", help="Path to input directory")
 
     # Opcionales
-    parser.add_argument("--output_type", default="all")
+    parser.add_argument("--output_type", default="all", choices=["all"])
     parser.add_argument("--analysis", default="all")
-    parser.add_argument("--interdistance", default="96")
+    parser.add_argument(
+        "--interdistance",
+        default="96",
+        help="Mutation types for the IMDs: same names as contexts, or SI (default: 96)",
+    )
     parser.add_argument("--exome", type=str2bool, nargs="?", const=True, default=False)
     parser.add_argument("--clustering_vaf", type=str2bool, nargs="?", const=True, default=False)
     parser.add_argument("--sortSims", type=str2bool, nargs="?", const=True, default=True)
@@ -43,6 +50,17 @@ def parse_arguments_clusters(args: List[str], description: str) -> argparse.Name
     parser.add_argument("--max_cpu", type=int, default=None)
     parser.add_argument("--subClassify", type=str2bool, nargs="?", const=True, default=False)
     parser.add_argument("--variant_caller", default="standard")
+    parser.add_argument(
+        "--tumor_vaf_column",
+        type=int,
+        default=10,
+        help="Only with --variant_caller custom: 0-based index of the VCF column with the VAF (default: 10)",
+    )
+    parser.add_argument(
+        "--vaf_field",
+        default="AF",
+        help="Only with --variant_caller custom: tag of the VAF in the FORMAT/sample columns (default: AF)",
+    )
     parser.add_argument("--includedVAFs", type=str2bool, nargs="?", const=True, default=True)
     parser.add_argument("--includedCCFs", type=str2bool, nargs="?", const=True, default=False)
     parser.add_argument("--windowSize", type=int, default=1000000)
@@ -81,6 +99,8 @@ class CliController:
             max_cpu=parsed_args.max_cpu,
             subClassify=parsed_args.subClassify,
             variant_caller=parsed_args.variant_caller,
+            tumor_vaf_column=parsed_args.tumor_vaf_column,
+            vaf_field=parsed_args.vaf_field,
             includedVAFs=parsed_args.includedVAFs,
             includedCCFs=parsed_args.includedCCFs,
             windowSize=parsed_args.windowSize,

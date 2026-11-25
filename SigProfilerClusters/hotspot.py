@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+from . import constants
+from .exceptions import MissingSimulationsError
 import os
 import numpy as np
 import statistics
@@ -75,6 +77,33 @@ def enrichment_p_value(observed, expected, sigma):
     if sigma == 0:
         return 0.0 if observed > expected else 1.0
     return 1 - norm.cdf((observed - expected) / sigma)
+
+
+# Fraction of the simulations that the reported interval contains (audit finding 20)
+INTERVAL_LEVEL = 0.95
+
+
+def central_interval(values, level=INTERVAL_LEVEL):
+    """
+    Lower and upper limits of the central `level` of a set of simulated counts.
+
+    The limits are observed values (no interpolation): the lower one is the value at the
+    (1 - level) / 2 quantile rounded down and the upper one the value at the
+    (1 + level) / 2 quantile rounded up. For 100 simulations and level 0.95 they are the
+    3rd smallest and the 98th smallest values. The code used to take the 6th and the 95th
+    (the 5th-95th percentile, a 90% interval) and called it a 95% interval.
+
+    Parameters:
+            values	->	simulated counts, one per simulation (list of numbers)
+             level	->	fraction of the simulations contained by the interval (float; default=0.95)
+
+    Returns:
+            lower, upper	->	the limits of the interval (numbers)
+    """
+    tail = (1 - level) / 2
+    lower = np.quantile(values, tail, method="lower")
+    upper = np.quantile(values, 1 - tail, method="higher")
+    return lower, upper
 
 
 def plot_clustered(orig_bins, sim_bins, bincenters2, panel4, lower_CI, upper_CI):
@@ -330,7 +359,7 @@ def refineIMD(
     CI,
     lower_CI,
     upper_CI,
-    sigValue=0.01,
+    sigValue=constants.Q_VALUE_THRESHOLD,
 ):
     """
     Refines the discretized IMD cutoff using a binary search algorithm
@@ -379,14 +408,13 @@ def refineIMD(
         avgSim = np.mean(total_bin_counts, axis=0)
         stdevSim = np.std(total_bin_counts, axis=0)
         total_bin_counts.sort()
-        upperCI = total_bin_counts[CI - 1][0]
-        lowerCI = total_bin_counts[-CI][0]
+        lowerCI, upperCI = central_interval([row[0] for row in total_bin_counts])
         z, p = z_test(ys, avgSim, stdevSim)
         q_vals = sm.fdrcorrection(p)[1]
 
         if middle == right or middle == left:
             return (middle, q_vals[0], avgSim[0], stdevSim[0], upperCI, lowerCI)
-        if q_vals[0] < sigValue and ys[0] / (avgSim[0] + ys[0]) > 0.9:
+        if q_vals[0] < sigValue and ys[0] / (avgSim[0] + ys[0]) > constants.CLUSTERED_FRACTION:
             left = middle
         else:
             right = middle
@@ -464,10 +492,7 @@ def first_run(
     # 	imdsProbabilities.append(y[bisect.bisect_left(x, dist)])
 
     maximum_sim = 0
-    try:
-        maximum_orig = max(distances_orig)
-    except:
-        maximum_orig = 0
+    maximum_orig = max(distances_orig, default=0)
     max_dist = max(maximum_orig, maximum_sim)
 
     bin1 = [0]
@@ -491,7 +516,7 @@ def first_run(
     mean_counts_cum = []
     std_dev_cum = []
 
-    CI = int(round(0.95 * sim_count, 0))
+    CI = int(round(0.95 * sim_count, 0))  # kept for refineIMD's signature; the interval uses central_interval
 
     for i in range(0, len(total_bin_counts[0]), 1):
         count = 0
@@ -506,8 +531,9 @@ def first_run(
         std_dev.append(stdev([int(x) for x in bin_std_dev]))
         mean_counts.append(mean(bin_std_dev))
         avg_bin_counts.append(int(round(median(bin_std_dev), 0)))
-        upper_CI.append(bin_std_dev[CI - 1])
-        lower_CI.append(bin_std_dev[-CI])
+        interval_lower, interval_upper = central_interval(bin_std_dev)
+        upper_CI.append(interval_upper)
+        lower_CI.append(interval_lower)
 
         bin_std_dev_cum.sort()
         std_dev_cum.append(stdev([int(x) for x in bin_std_dev_cum]))
@@ -533,9 +559,9 @@ def first_run(
     interval_percent = 0
 
     p_vals = []
-    percent_clustered = 0.90
+    percent_clustered = constants.CLUSTERED_FRACTION
     if correctionData:
-        percent_clustered = 0.95
+        percent_clustered = constants.CLUSTERED_FRACTION_CORRECTED
 
     current_orig_mutations_cum = 0
     current_mean_cum = 0
@@ -572,13 +598,13 @@ def first_run(
         current_mean = mean_counts[i]
         current_stdev = std_dev[i]
         current_q = q_vals[i]
-        if orig_mutations / total_mutations < percent_clustered or current_q > 0.01:
+        if orig_mutations / total_mutations < percent_clustered or current_q > constants.Q_VALUE_THRESHOLD:
             # if correctionData:
             # 	print(orig_mutations/total_mutations, previous_interval)
             if abs((orig_mutations / total_mutations) - percent_clustered) < abs(
                 previous_interval - percent_clustered
             ):
-                if current_q > 0.01:
+                if current_q > constants.Q_VALUE_THRESHOLD:
                     interval_line = i - 1
                     orig_mutations -= y2[i]
                     interval_percent = previous_interval * 100
@@ -593,7 +619,7 @@ def first_run(
         previous_interval = orig_mutations / total_mutations
     interval_line = abs(interval_line)
     distance_cut = bincenters2[interval_line]
-    sigValue = 0.01
+    sigValue = constants.Q_VALUE_THRESHOLD
     distance_cut, q_val, avgSim, stdevSim, upper_CI_refined, lower_CI_refined = (
         refineIMD(
             distances,
@@ -609,8 +635,8 @@ def first_run(
             sigValue,
         )
     )
-    if distance_cut > 10000:
-        distance_cut = 10000
+    if distance_cut > constants.IMD_CUTOFF_CAP:
+        distance_cut = constants.IMD_CUTOFF_CAP
 
     if not correctionData:
         if correction:
@@ -785,10 +811,7 @@ def cutoffCatch(
         if regions[bisectPos] not in imds_corrected[x[1]]:
             return int(x[0]) < distance_cut
         else:
-            if int(x[3]) + chroms[x[2]] < windowSize:
-                return int(x[0]) < imds_corrected[x[1]][regions[bisectPos]]
-            else:
-                return False
+            return int(x[0]) < imds_corrected[x[1]][regions[bisectPos]]
 
 
 def densityCorrectionOriginal(densityMuts, densityMutsSim, binsDensity):
@@ -823,7 +846,7 @@ def densityCorrectionOriginal(densityMuts, densityMutsSim, binsDensity):
     histSimFinal = np.median(histSims, axis=0)
     fold = hist / histSimFinal
     correctionFolds = [
-        y for x, y, z in zip(fold, bins[:], hist_muts) if x > 1.25 and z > 50
+        y for x, y, z in zip(fold, bins[:], hist_muts) if x > constants.DENSITY_FOLD_CHANGE and z > constants.DENSITY_MIN_MUTATIONS
     ]  # or x < 1/1.25]
     correctionFolds.append(6000000000)
     return correctionFolds
@@ -855,61 +878,40 @@ def densityCorrection(densityMuts, densityMutsSim, windowSize):
     Returns:
        correctionFolds	->	the cumulative genomic position of regions that have a higher mutation density than what is expected by chance (list)
     """
-    sims = random.sample(list(densityMutsSim.keys()), 10)
-    densityMutsSimSample = {x: densityMutsSim[x] for x in sims}
-
-    threshold = 9.0
-    try:
-        maxDistance = (
-            max(
-                max(densityMuts),
-                max([int(densityMutsSimSample[x][-1]) for x in densityMutsSimSample]),
-            )
-            + windowSize
-        )
-    except:
-        if len(densityMuts) == 0:
-            maxDistance = (
-                max([int(densityMutsSimSample[x][-1]) for x in densityMutsSimSample])
-                + windowSize
-            )
-        else:
-            maxDistance = max(densityMuts) + windowSize
-    # maxDistance = max(max(densityMuts), max([int(densityMutsSim[x][-1]) for x in densityMutsSim])) + windowSize
-    simDensities = []
-    simWindowParitions = []
+    threshold = constants.DENSITY_PEAK_THRESHOLD
     slideSize = windowSize
-    imdsProbabilities = []
-    for x in densityMutsSimSample:
-        currentWindow = 0
-        densities = []
-        while currentWindow < maxDistance:
-            currentMuts = moving_density(
-                densityMutsSimSample[x], currentWindow, currentWindow + slideSize
-            )
-            densities.append(len(currentMuts))
-            simWindowParitions.append(currentMuts)
+    observed = np.sort(np.asarray([int(x) for x in densityMuts], dtype=np.int64))
+    simulated = [
+        np.sort(np.asarray([int(x) for x in positions], dtype=np.int64))
+        for positions in densityMutsSim.values()
+    ]
+    if len(observed) == 0 or all(len(sim) == 0 for sim in simulated):
+        return []
+    lastPosition = max(
+        [int(observed[-1])] + [int(sim[-1]) for sim in simulated if len(sim) > 0]
+    )
+    # number of windows needed to cover every position
+    nWindows = lastPosition // slideSize + 1
+    edges = np.arange(nWindows + 1) * slideSize
 
-            currentWindow += slideSize
-        simDensities.append(densities)
+    def counts(positions):
+        return np.histogram(positions, bins=edges)[0]
 
-    finalSimDensities = np.mean(simDensities, axis=0)
+    # expected density: mean over ALL simulations (empty windows count as 1)
+    finalSimDensities = np.mean([counts(sim) for sim in simulated], axis=0)
     finalSimDensities[finalSimDensities == 0] = 1
 
-    densities = []
-    currentWindow = 0
-
-    while currentWindow < maxDistance:
-        currentMuts = moving_density(
-            densityMutsSimSample[x], currentWindow, currentWindow + slideSize
-        )
-        densities.append(len(currentMuts))
-        currentWindow += slideSize
-
-    foldChanges = densities / finalSimDensities
-    peaks, heights = find_peaks([0] + foldChanges + [0], threshold)
-    regions = [slideSize * (x - 1) for x in peaks]
+    foldChanges = counts(observed) / finalSimDensities
+    # padded with zeros so a peak in the first or last window is found; peak i of the
+    # padded array is window i - 1, whose RIGHT edge is slideSize * i (callers compare
+    # edge - position < windowSize)
+    peaks, heights = find_peaks(np.concatenate(([0], foldChanges, [0])), threshold)
+    regions = [int(slideSize * x) for x in peaks]
     return regions
+
+
+SKIP_NO_NEARBY_MUTATIONS = "no nearby mutations (no intradistance file for the original sample)"
+SKIP_NOT_ENOUGH_DISTANCES = "not enough distances to estimate the cutoff"
 
 
 def calculateSampleIMDs(
@@ -929,6 +931,7 @@ def calculateSampleIMDs(
     correction,
     chromLengths,
 ):
+    skipped_samples = {}  # sample -> reason, for the samples that the analysis skips
     imds = {}
     y2s = {}
     bincenters2s = {}
@@ -981,47 +984,45 @@ def calculateSampleIMDs(
 
         if original:  # Calculate data/plots for original sample
             # Gather the distances for the original sample
-            try:
-                if not os.path.exists(
-                    directory_orig
-                    + sample
-                    + "_"
-                    + contexts
-                    + exomeSuffix
-                    + "_intradistance.txt"
-                ):
-                    continue
-                with open(
-                    directory_orig
-                    + sample
-                    + "_"
-                    + contexts
-                    + exomeSuffix
-                    + "_intradistance.txt"
-                ) as f2:
-                    for lines in f2:
-                        line = lines.strip().split()
-                        if int(line[0]) >= 1:
-                            if chrom_based:
-                                if line[2] not in distances_orig_all_samps:
-                                    distances_orig_all_samps[line[2]] = [line]
-                                    distances_orig_all[line[2]] = [int(line[0])]
-                                else:
-                                    distances_orig_all_samps[line[2]].append(line)
-                                    distances_orig_all[line[2]].append(int(line[0]))
-                            else:
-                                distances_orig_all_samps.append(line)
-                                distances_orig_all.append(int(line[0]))
-                            if correction:
-                                densityMuts.append(
-                                    int(line[3]) + chromLengths[genome][line[2]]
-                                )
-            except:
-                print(
+            if not os.path.exists(
+                directory_orig
+                + sample
+                + "_"
+                + contexts
+                + exomeSuffix
+                + "_intradistance.txt"
+            ):
+                warnings.warn(
                     sample
                     + " does not have nearby IDs to one another. Skipping this sample."
                 )
+                skipped_samples[sample] = SKIP_NO_NEARBY_MUTATIONS
                 continue
+            with open(
+                directory_orig
+                + sample
+                + "_"
+                + contexts
+                + exomeSuffix
+                + "_intradistance.txt"
+            ) as f2:
+                for lines in f2:
+                    line = lines.strip().split()
+                    if int(line[0]) >= 1:
+                        if chrom_based:
+                            if line[2] not in distances_orig_all_samps:
+                                distances_orig_all_samps[line[2]] = [line]
+                                distances_orig_all[line[2]] = [int(line[0])]
+                            else:
+                                distances_orig_all_samps[line[2]].append(line)
+                                distances_orig_all[line[2]].append(int(line[0]))
+                        else:
+                            distances_orig_all_samps.append(line)
+                            distances_orig_all.append(int(line[0]))
+                        if correction:
+                            densityMuts.append(
+                                int(line[3]) + chromLengths[genome][line[2]]
+                            )
 
         # Collect simulation distances
         sim_count = len(files)
@@ -1070,43 +1071,43 @@ def calculateSampleIMDs(
         if correction:
             regions = densityCorrection(densityMuts, densityMutsSim, windowSize)
             regionsSamps[folder] = regions
-            try:
-                densityCorrectDistances = {}
-                densityCorrectDistances_samps = {}
-                densityCorrectDistancesSims = {}
-                for region in regions:
-                    densityCorrectDistances[region] = []
-                    densityCorrectDistancesSims[region] = []
-                    densityCorrectDistances_samps[region] = []
-                with open(
-                    directory_orig
-                    + sample
-                    + "_"
-                    + contexts
-                    + exomeSuffix
-                    + "_intradistance.txt"
-                ) as f2:
-                    for lines in f2:
-                        line = lines.strip().split()
-                        if int(line[0]) >= 1:
-                            position = int(line[3]) + chromLengths[genome][line[2]]
-                            try:
-                                bisectRegion = regions[
-                                    bisect.bisect_left(regions, position)
-                                ]
-                            except:
-                                continue
-                            if bisectRegion - position < windowSize:
-                                densityCorrectDistances_samps[bisectRegion].append(line)
-                                densityCorrectDistances[bisectRegion].append(
-                                    int(line[0])
-                                )
-            except:
-                print(
-                    sample
-                    + " does not have nearby IDs to one another. Skipping this sample."
+            intradistance = (
+                directory_orig + sample + "_" + contexts + exomeSuffix + "_intradistance.txt"
+            )
+            if not os.path.exists(intradistance):
+                warnings.warn(
+                    sample + " does not have nearby IDs to one another. Skipping this sample."
                 )
+                skipped_samples[sample] = SKIP_NO_NEARBY_MUTATIONS
                 continue
+            densityCorrectDistances = {}
+            densityCorrectDistances_samps = {}
+            densityCorrectDistancesSims = {}
+            for region in regions:
+                densityCorrectDistances[region] = []
+                densityCorrectDistancesSims[region] = []
+                densityCorrectDistances_samps[region] = []
+            with open(
+                directory_orig
+                + sample
+                + "_"
+                + contexts
+                + exomeSuffix
+                + "_intradistance.txt"
+            ) as f2:
+                for lines in f2:
+                    line = lines.strip().split()
+                    if int(line[0]) >= 1:
+                        position = int(line[3]) + chromLengths[genome][line[2]]
+                        index = bisect.bisect_left(regions, position)
+                        if index >= len(regions):
+                            continue
+                        bisectRegion = regions[index]
+                        if bisectRegion - position < windowSize:
+                            densityCorrectDistances_samps[bisectRegion].append(line)
+                            densityCorrectDistances[bisectRegion].append(
+                                int(line[0])
+                            )
 
             for file in files:
                 if file == ".DS_Store":
@@ -1119,12 +1120,10 @@ def calculateSampleIMDs(
                         line = lines.strip().split()
                         if int(line[0]) >= 1:
                             position = int(line[3]) + chromLengths[genome][line[2]]
-                            try:
-                                bisectRegion = regions[
-                                    bisect.bisect_left(regions, position)
-                                ]
-                            except:
+                            index = bisect.bisect_left(regions, position)
+                            if index >= len(regions):
                                 continue
+                            bisectRegion = regions[index]
                             if bisectRegion - position < windowSize:
                                 distances[bisectRegion].append(int(line[0]))
 
@@ -1147,44 +1146,41 @@ def calculateSampleIMDs(
                     std_simCounts_corrected[sample] = {}
                     upper_CIs_refined_corrected[sample] = {}
                     lower_CIs_refined_corrected[sample] = {}
-                try:
-                    if (
-                        len(densityCorrectDistancesSims[region]) == 0
-                        or len(densityCorrectDistances_samps[region]) == 0
-                        or len(densityCorrectDistances[region]) == 0
-                    ):
-                        continue
-                    (
-                        y2s_corrected[sample][region],
-                        bincenters2s_corrected[sample][region],
-                        q_values_corrected[sample][region],
-                        interval_lines_corrected[sample][region],
-                        orig_mutations_samps_corrected[sample][region],
-                        avg_simCounts_corrected[sample][region],
-                        std_simCounts_corrected[sample][region],
-                        imds_corrected[sample][region],
-                        lower_CIs_corrected[sample][region],
-                        upper_CIs_corrected[sample][region],
-                        lower_CIs_refined_corrected[sample][region],
-                        upper_CIs_refined_corrected[sample][region],
-                        avg_bin_counts_samp_corrected[sample][region],
-                    ) = first_run(
-                        densityCorrectDistancesSims[region],
-                        densityCorrectDistances_samps[region],
-                        densityCorrectDistances[region],
-                        vcf_path_clust,
-                        vcf_path_nonClust,
-                        sample,
-                        original,
-                        sim_count,
-                        project,
-                        genome,
-                        clustering_vaf,
-                        correctionData,
-                        chromLengths,
-                    )
-                except:
+                if (
+                    len(densityCorrectDistancesSims[region]) == 0
+                    or len(densityCorrectDistances_samps[region]) == 0
+                    or len(densityCorrectDistances[region]) == 0
+                ):
                     continue
+                (
+                    y2s_corrected[sample][region],
+                    bincenters2s_corrected[sample][region],
+                    q_values_corrected[sample][region],
+                    interval_lines_corrected[sample][region],
+                    orig_mutations_samps_corrected[sample][region],
+                    avg_simCounts_corrected[sample][region],
+                    std_simCounts_corrected[sample][region],
+                    imds_corrected[sample][region],
+                    lower_CIs_corrected[sample][region],
+                    upper_CIs_corrected[sample][region],
+                    lower_CIs_refined_corrected[sample][region],
+                    upper_CIs_refined_corrected[sample][region],
+                    avg_bin_counts_samp_corrected[sample][region],
+                ) = first_run(
+                    densityCorrectDistancesSims[region],
+                    densityCorrectDistances_samps[region],
+                    densityCorrectDistances[region],
+                    vcf_path_clust,
+                    vcf_path_nonClust,
+                    sample,
+                    original,
+                    sim_count,
+                    project,
+                    genome,
+                    clustering_vaf,
+                    correctionData,
+                    chromLengths,
+                )
 
         correctionData = False
         if chrom_based:
@@ -1241,6 +1237,7 @@ def calculateSampleIMDs(
                 or len(distances_orig_all_samps) == 0
                 or len(distances_orig_all) == 0
             ):
+                skipped_samples[sample] = SKIP_NOT_ENOUGH_DISTANCES
                 continue
             (
                 y2s[sample],
@@ -1305,8 +1302,44 @@ def calculateSampleIMDs(
         std_simCounts_corrected,
         upper_CIs_refined_corrected,
         lower_CIs_refined_corrected,
+        skipped_samples,
     )
     # return(imds)
+
+
+def check_simulated_distances(folders, directory):
+    """The simulations must give distances for at least one sample. When no simulated sample
+    has two mutations on the same chromosome there is nothing to estimate the IMD cutoffs from;
+    without this check the pool of processes was created with 0 workers and multiprocessing
+    raised an uninformative ValueError (audit finding 115)."""
+    samples = [x for x in folders if x not in (".DS_Store", ".DS_Store_intradistance.txt")]
+    if not samples:
+        raise MissingSimulationsError(
+            "No simulated sample has any pair of mutations on the same chromosome, so there are "
+            "no simulated distances to calculate the IMD cutoffs (looked in " + str(directory) + "). "
+            "Simulate more mutations or use an input with more mutations."
+        )
+
+
+def report_skipped_samples(skipped_samples, table_path, log_file):
+    """Reports together the samples that the analysis skipped, with the reason: on the screen,
+    at the end of the log file and in a tab-separated table. Without skipped samples nothing
+    is printed or written, and the table of an earlier run is removed."""
+    if os.path.exists(table_path):
+        os.remove(table_path)
+    if not skipped_samples:
+        return
+    lines = [
+        sample + ": " + skipped_samples[sample] for sample in sorted(skipped_samples)
+    ]
+    text = "Skipped samples (" + str(len(lines)) + "):\n  " + "\n  ".join(lines)
+    print("\n" + text, flush=True)
+    with open(log_file, "a") as log:
+        log.write("\n-------Skipped samples-------\n" + text + "\n")
+    with open(table_path, "w") as table:
+        table.write("sample\treason\n")
+        for sample in sorted(skipped_samples):
+            table.write(sample + "\t" + skipped_samples[sample] + "\n")
 
 
 def getResults(result):
@@ -1339,6 +1372,7 @@ def getResults(result):
         std_simCounts_corrected,
         upper_CIs_refined_corrected,
         lower_CIs_refined_corrected,
+        skipped_samples,
     ) = result
     imdsFinal.update(imds)
     y2sFinal.update(y2s)
@@ -1370,8 +1404,19 @@ def getResults(result):
     std_simCounts_correctedFinal.update(std_simCounts_corrected)
     upper_CIs_refined_correctedFinal.update(upper_CIs_refined_corrected)
     lower_CIs_refined_correctedFinal.update(lower_CIs_refined_corrected)
+    skipped_samplesFinal.update(skipped_samples)
 
     # allResults.append(result)
+
+
+def has_clustered_mutations(matrices, contexts):
+    """
+    True if the matrix of the requested context has at least one mutation: "ID" for the
+    ID (indel) analysis and "96" for SBS. An ID analysis has no "96" matrix (audit finding 12).
+    """
+    key = "ID" if constants.is_indel_context(contexts) else "96"
+    matrix = matrices.get(key)
+    return matrix is not None and bool(matrix.sum().sum() != 0)
 
 
 def hotSpotAnalysis(
@@ -1441,9 +1486,9 @@ def hotSpotAnalysis(
     simContext = "_".join(simContext)
     file_context = contexts
 
-    if contexts == "96":
+    if constants.is_sbs_context(contexts):
         matrix_file_suffix = ".SBS96."
-    elif contexts == "INDEL" or contexts == "ID":
+    elif constants.is_indel_context(contexts):
         matrix_file_suffix = ".ID83."
 
     if exome:
@@ -1480,7 +1525,7 @@ def hotSpotAnalysis(
         + "/"
     )
 
-    if file_context == "96":
+    if constants.is_sbs_context(file_context):
         vcf_path_clust = (
             ref_dir
             + "output/vcf_files"
@@ -1677,7 +1722,7 @@ def hotSpotAnalysis(
     ################################################################
 
     # Instantiate the majority of the data structures
-    global imdsFinal, y2sFinal, bincenters2sFinal, q_valuesFinal, interval_linesFinal, orig_mutations_sampsFinal, lower_CIsFinal, upper_CIsFinal, avg_bin_counts_sampFinal, avg_simCountsFinal, std_simCountsFinal, upper_CIs_refinedFinal, lower_CIs_refinedFinal, imds_correctedFinal, y2s_correctedFinal, bincenters2s_correctedFinal, q_values_correctedFinal, interval_lines_correctedFinal, orig_mutations_samps_correctedFinal, lower_CIs_correctedFinal, upper_CIs_correctedFinal, avg_bin_counts_samp_correctedFinal, regionsSampsFinal, avg_simCounts_correctedFinal, std_simCounts_correctedFinal, upper_CIs_refined_correctedFinal, lower_CIs_refined_correctedFinal
+    global imdsFinal, y2sFinal, bincenters2sFinal, q_valuesFinal, interval_linesFinal, orig_mutations_sampsFinal, lower_CIsFinal, upper_CIsFinal, avg_bin_counts_sampFinal, avg_simCountsFinal, std_simCountsFinal, upper_CIs_refinedFinal, lower_CIs_refinedFinal, imds_correctedFinal, y2s_correctedFinal, bincenters2s_correctedFinal, q_values_correctedFinal, interval_lines_correctedFinal, orig_mutations_samps_correctedFinal, lower_CIs_correctedFinal, upper_CIs_correctedFinal, avg_bin_counts_samp_correctedFinal, regionsSampsFinal, avg_simCounts_correctedFinal, std_simCounts_correctedFinal, upper_CIs_refined_correctedFinal, lower_CIs_refined_correctedFinal, skipped_samplesFinal
     # imds = {}
     # y2s = {}
     # bincenters2s = {}
@@ -1737,8 +1782,10 @@ def hotSpotAnalysis(
     std_simCounts_correctedFinal = {}
     upper_CIs_refined_correctedFinal = {}
     lower_CIs_refined_correctedFinal = {}
+    skipped_samplesFinal = {}
 
     folders = os.listdir(directory)
+    check_simulated_distances(folders, directory)
 
     ############################################################################################################
     # Start calculating the IMDs for each sample. This includes IMD corrections and calculations for both the
@@ -1872,30 +1919,10 @@ def hotSpotAnalysis(
         matrices = matGen.SigProfilerMatrixGeneratorFunc(
             project + "_clustered", genome, vcf_path_clust, plot=False
         )
-        ##To handle the none matrices
-        if matrices.get("96") is None:
+        # The matrix that tells whether there are clustered mutations depends on the context
+        if not has_clustered_mutations(matrices, contexts):
             print("No clustered mutations found")
-            sys.exit()
-        elif matrices["96"].sum().sum() == 0:
-            print("No clustered mutations found")
-            sys.exit()
-        # if contexts == "96":
-        #     if "96" in matrices:
-        #         if matrices["96"].sum().sum() == 0:
-        #             print("No clustered mutations found")
-        #             sys.exit()
-        #     else:
-        #         print("No clustered mutations found")
-        #         sys.exit()
-        elif contexts == "ID":
-            print()
-            if "ID" in matrices:
-                if matrices["ID"].sum().sum() == 0:
-                    print("No clustered mutations found")
-                    sys.exit()
-            else:
-                print("No clustered mutations found")
-                sys.exit()
+            return None, None
         print("\nAnalyzing non-clustered mutations...", flush=True)
         matGen.SigProfilerMatrixGeneratorFunc(
             project + "_nonClustered", genome, vcf_path_nonClust, plot=False
@@ -2227,7 +2254,7 @@ def hotSpotAnalysis(
             upper_CIs_refinedFinal = pickle.load(handle)
     ############################################################################################################
     # Recollect samples names
-    if contexts == "96":
+    if constants.is_sbs_context(contexts):
         with open(
             ref_dir
             + "output/vcf_files"
@@ -2241,7 +2268,7 @@ def hotSpotAnalysis(
             first_line = f.readline()
             samples = first_line.strip().split()
             samples = samples[1:]
-    elif contexts == "INDEL" or contexts == "ID":
+    elif constants.is_indel_context(contexts):
         with open(
             ref_dir
             + "output/vcf_files"
@@ -2348,7 +2375,7 @@ def hotSpotAnalysis(
                     )
 
                     if clustered:
-                        if file_context == "96":
+                        if constants.is_sbs_context(file_context):
                             plottingFunctions.plot96_same(
                                 matrix_path,
                                 matrix_path_clustered,

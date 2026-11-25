@@ -1,4 +1,5 @@
 import os
+from . import constants
 import numpy as np
 import os
 from SigProfilerMatrixGenerator.scripts import SigProfilerMatrixGeneratorFunc as matGen
@@ -10,6 +11,88 @@ import bisect
 import re
 import multiprocessing as mp
 import sys
+import warnings
+
+
+# Variant allele frequencies. A missing value is NaN (it used to be the sentinel -1.5, which made
+# two missing values look concordant and a missing one next to a real one look discordant).
+# Audit finding 6: unknown values are not compared.
+UNKNOWN_VAF = float("nan")
+
+
+def _lookup_by_key(values, sample, lines, what):
+    """Value read from the input for one clustered mutation (chromosome, position, ref
+    and alt), looking for the chromosome with and without the 'chr' prefix. Raises a
+    KeyError that names the sample and the mutation when it is in neither form."""
+    fields = [lines[6], lines[8], lines[9]]
+    per_sample = values.get(sample, {})
+    for chrom in (lines[5], "chr" + lines[5]):
+        key = ":".join([chrom] + fields)
+        if key in per_sample:
+            return per_sample[key]
+    raise KeyError(
+        f"no {what} read from the input for the mutation {':'.join([lines[5]] + fields)} "
+        f"of sample {sample}"
+    )
+
+
+def has_class2_pattern(distances_above_one, event_size):
+    """True when a clustered event with this many distances above 1 between consecutive
+    mutations cannot be a DBS or MBS: more than one such distance, or a single one in an
+    event of four or more mutations (audit finding 14, e.g. IMDs [1, 1, 2]). Whether it
+    is class II or omikli then depends on the event size."""
+    return distances_above_one > 1 or (distances_above_one == 1 and event_size >= 4)
+
+
+def _field_value(field, key):
+    """Value of `key` in a ';'-separated key=value field (VCF INFO or sample column).
+    The key must match exactly: TVAF= is not VAF=."""
+    for item in field.split(";"):
+        name, _, value = item.partition("=")
+        if name == key and value != "":
+            return value
+    return None
+
+
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return UNKNOWN_VAF
+
+
+def vaf_is_unknown(value):
+    value = float(value)
+    return value != value
+
+
+def vaf_unknown_count(event):
+    """Number of mutations of an event whose VAF/CCF (last column) is unknown."""
+    return sum(1 for line in event if vaf_is_unknown(line[-1]))
+
+
+def vaf_differences(event):
+    """Differences between the VAFs of consecutive mutations of an event, rounded to 4
+    decimals, skipping the mutations with an unknown VAF."""
+    known = [float(line[-1]) for line in event if not vaf_is_unknown(line[-1])]
+    return [round(abs(b - a), 4) for a, b in zip(known, known[1:])]
+
+
+def vaf_compatible(a, b, vaf_cut):
+    """True if two VAFs differ by less than vaf_cut; an unknown VAF is compatible with any."""
+    if vaf_is_unknown(a) or vaf_is_unknown(b):
+        return True
+    return abs(float(a) - float(b)) < vaf_cut
+
+
+def _warn_unknown_vafs(kind, unknown, total):
+    for sample in sorted(unknown):
+        warnings.warn(
+            "%d of %d clustered mutations of sample %s have no %s in the input; they are not "
+            "compared when checking the concordance of an event" % (unknown[sample], total[sample], sample, kind),
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 def get_input_vcf_path(project_path):
@@ -198,12 +281,12 @@ def processivitySubclassification(event, out2Y, out2K, out2S, out2N):
     )
 
     maxProcessivity = max(pyrProcess, ketoProcess, strongProcess)
-    processiveLenthRequirement = len(refs) * 0.75
+    processiveLenthRequirement = len(refs) * constants.PROCESSIVE_RUN_FRACTION
     if (
         pyrProcessCG > processiveLenthRequirement
         or pyrProcessTA > processiveLenthRequirement
-        or purityCG > 0.9
-        or purityTA > 0.9
+        or purityCG > constants.PROCESSIVE_PURITY
+        or purityTA > constants.PROCESSIVE_PURITY
     ):
         for line in event:
             print("\t".join([x for x in line]), file=out2Y)
@@ -285,12 +368,7 @@ def pullCCF(project, project_path, correction=True):
                 pos = lines[1]
                 ref = lines[3]
                 alt = lines[4]
-                try:
-                    ccf = float(lines[-1])
-                except:
-                    ccf = -1.5
-                    # print("There does not seem to be CCF scores in this input file.\n\t", vcfFile)
-                    # break
+                ccf = _to_float(lines[-1])
                 if len(ref) == len(alt) and len(ref) > 1:
                     for i in range(len(ref)):
                         keyLine = ":".join([chrom, str(int(pos) + i), ref[i], alt[i]])
@@ -299,6 +377,7 @@ def pullCCF(project, project_path, correction=True):
                     keyLine = ":".join([chrom, pos, ref, alt])
                     ccfs[sample][keyLine] = ccf
 
+    unknown, total = {}, {}
     with open(clusteredMutsFile) as f, open(
         clusteredMutsPath + project + "_clustered_vaf.txt", "w"
     ) as out:
@@ -330,15 +409,13 @@ def pullCCF(project, project_path, correction=True):
         for lines in f:
             lines = lines.strip().split()
             sample = lines[1]
-            newKey = ":".join([lines[5], lines[6], lines[8], lines[9]])
-
-            try:
-                ccf = ccfs[sample][newKey]
-            except:
-                newKey = ":".join(["chr" + lines[5], lines[6], lines[8], lines[9]])
-                ccf = ccfs[sample][newKey]
+            ccf = _lookup_by_key(ccfs, sample, lines, "CCF")
             lines.append(str(ccf))
+            total[sample] = total.get(sample, 0) + 1
+            if ccf != ccf:
+                unknown[sample] = unknown.get(sample, 0) + 1
             print("\t".join([x for x in lines]), file=out)
+    _warn_unknown_vafs("CCF", unknown, total)
 
 
 def pullVaf(project, project_path, variant_caller="standard", tumor_vaf_column=10, vaf_field = "AF",correction=True):
@@ -395,200 +472,99 @@ def pullVaf(project, project_path, variant_caller="standard", tumor_vaf_column=1
     #     "mutect2": "mutect2",
     # }
     ###extracting VAF info
-    if variant_caller == "standard":
-        vafs = {}
-        for vcfFile in vcf_files:
-            sample = vcfFile.split(".")[0]
-            vafs[sample] = {}
-            with open(vcf_path + vcfFile) as f:
-                for lines in f:
-                    if lines[0] == "#":
-                        continue
-                    lines = lines.strip().split()
-                    chrom = lines[0]
-                    pos = lines[1]
-                    ref = lines[3]
-                    alt = lines[4]
-                    try:
-                        if "VAF=" in lines[7]:
-                            vaf = float(lines[7].split("VAF=")[1].split(";")[0])
-                        elif "AF=" in lines[9]:
-                            vaf = float(lines[9].split("AF=")[1].split(";")[0])
-                        else:
-                            vaf = -1.5
-                    except:
-                        vaf = -1.5
+    def add_variant(store, chrom, pos, ref, alt, vaf):
+        """Store the VAF of a variant; a multi-base substitution is split into its bases."""
+        if len(ref) == len(alt) and len(ref) > 1:
+            for i in range(len(ref)):
+                store[":".join([chrom, str(int(pos) + i), ref[i], alt[i]])] = vaf
+        else:
+            store[":".join([chrom, pos, ref, alt])] = vaf
 
-                    if len(ref) == len(alt) and len(ref) > 1:
-                        for i in range(len(ref)):
-                            keyLine = ":".join(
-                                [chrom, str(int(pos) + i), ref[i], alt[i]]
-                            )
-                            vafs[sample][keyLine] = vaf
-                    else:
-                        keyLine = ":".join([chrom, pos, ref, alt])
-                        vafs[sample][keyLine] = vaf
+    def tumor_column(vcf_file, header, tumor_name, column=None):
+        """Index of the tumor sample column of a VCF with a #CHROM header line."""
+        if column is not None:
+            if len(header) <= column:
+                raise ValueError(
+                    "Tumor column %d not found in the header of %s (it has %d columns)"
+                    % (column, vcf_file, len(header))
+                )
+            return column
+        if tumor_name in header:
+            return header.index(tumor_name)
+        if "TUMOR" in header:
+            return header.index("TUMOR")
+        raise ValueError(
+            "The tumor sample column of %s was not found: no ##tumor_sample line matches a "
+            "column and none is called TUMOR. Use variant_caller='custom' with tumor_vaf_column."
+            % vcf_file
+        )
 
-    elif variant_caller == "caveman":
-        vafs = {}
-        for vcfFile in vcf_files:
-            sample = vcfFile.split(".")[0]
-            vafs[sample] = {}
-            with open(vcf_path + vcfFile) as f:
-                for lines in f:
-                    if lines[0] == "#":
-                        continue
-                    lines = lines.strip().split()
-                    chrom = lines[0]
-                    if len(chrom) > 3:
+    def read_format_vafs(vcf_file, store, field, column=None):
+        """Read the VAF (tag `field` of the FORMAT column) of the tumor sample column."""
+        tumor_name, header = None, None
+        with open(os.path.join(vcf_path, vcf_file)) as handle:
+            for line in handle:
+                if line.startswith("##tumor_sample="):
+                    tumor_name = line.strip().split("=", 1)[1]
+                if line.startswith("#") and not line.startswith("##"):
+                    header = line.strip().split("\t")
+                    break
+            if header is None:
+                raise ValueError("%s has no #CHROM header line" % vcf_file)
+            tumor_index = tumor_column(vcf_file, header, tumor_name, column)
+            for line in handle:
+                if line.startswith("#"):
+                    continue
+                fields = line.strip().split("\t")
+                try:
+                    chrom = fields[0]
+                    if chrom.lower().startswith("chr"):
                         chrom = chrom[3:]
-                    pos = lines[1]
-                    ref = lines[3]
-                    alt = lines[4]
-                    try:
-                        vaf = float(lines[-1].split(":")[-1])
-                    except:
-                        print(
-                            "There does not seem to be VAF scores in this Sanger-produced file.\n\t",
-                            vcfFile,
-                        )
-                        break
-                    if len(ref) == len(alt) and len(ref) > 1:
-                        for i in range(len(ref)):
-                            keyLine = ":".join(
-                                [chrom, str(int(pos) + i), ref[i], alt[i]]
-                            )
-                            vafs[sample][keyLine] = vaf
-                    else:
-                        keyLine = ":".join([chrom, pos, ref, alt])
-                        vafs[sample][keyLine] = vaf
-
-    elif variant_caller == "mutect2":
-        field = "AF"  # The VAF field in the FORMAT column
-        vafs = {}
-
-        for vcfFile in vcf_files:
-            sample = vcfFile.split(".")[0]
-            vafs[sample] = {}
-            header = []
-
-            with open(os.path.join(vcf_path, vcfFile)) as f:
-                for line in f:
-                    # Identify the header line with column names
-                    if line.startswith("#") and not line.startswith("##"):
-                        header = line.strip().split("\t")
-                        break  # Stop after finding the header
-
-                # Check if TUMOR column exists
-
-                print(header)
-                if "TUMOR" not in header:
-                    print(f"TUMOR column not found in {vcfFile}. Skipping...")
+                    pos, ref, alt = fields[1], fields[3], fields[4]
+                except IndexError:
                     continue
+                try:
+                    tags = fields[8].split(":")
+                    vaf = float(fields[tumor_index].split(":")[tags.index(field)])
+                except (ValueError, IndexError):
+                    vaf = UNKNOWN_VAF
+                add_variant(store, chrom, pos, ref, alt, vaf)
 
-                # Get the index of the TUMOR column
-                tumor_index = header.index("TUMOR")
-
-                # Process the data rows
-                for line in f:
-                    if line.startswith("#"):
+    vafs = {}
+    if variant_caller not in constants.VARIANT_CALLERS:
+        raise ValueError(
+            "variant_caller must be 'standard', 'caveman', 'mutect2' or 'custom', not %r"
+            % variant_caller
+        )
+    for vcfFile in vcf_files:
+        sample = vcfFile.split(".")[0]
+        vafs[sample] = {}
+        if variant_caller == "mutect2":
+            read_format_vafs(vcfFile, vafs[sample], "AF")
+        elif variant_caller == "custom":
+            read_format_vafs(vcfFile, vafs[sample], vaf_field, column=tumor_vaf_column)
+        else:
+            with open(vcf_path + vcfFile) as f:
+                for lines in f:
+                    if lines[0] == "#":
                         continue
-
-                    try:
-                        fields = line.strip().split("\t")
-                        chrom = fields[0]
-
-                        # Normalize chromosome naming
-                        if chrom.lower().startswith("chr"):
+                    lines = lines.strip().split()
+                    chrom, pos, ref, alt = lines[0], lines[1], lines[3], lines[4]
+                    if variant_caller == "standard":
+                        # INFO VAF=, then INFO AF=, then AF= in the sample column; exact keys
+                        value = _field_value(lines[7], "VAF")
+                        if value is None:
+                            value = _field_value(lines[7], "AF")
+                        if value is None and len(lines) > 9:
+                            value = _field_value(lines[9], "AF")
+                        vaf = _to_float(value)
+                    else:  # caveman: last number of the colon-delimited sample column
+                        if len(chrom) > 3:
                             chrom = chrom[3:]
+                        vaf = _to_float(lines[-1].split(":")[-1])
+                    add_variant(vafs[sample], chrom, pos, ref, alt, vaf)
 
-                        pos = fields[1]
-                        ref = fields[3]
-                        alt = fields[4]
-
-                        # Extract FORMAT field and TUMOR data
-                        fmt = fields[8].split(":")
-                        tumor_data = fields[tumor_index].split(":")
-
-                        # Get the VAF value
-                        vaf_index = fmt.index(field)
-                        vaf = float(tumor_data[vaf_index])
-
-                        # Create key for the variant
-                        if len(ref) == len(alt) and len(ref) > 1:
-                            for i in range(len(ref)):
-                                keyLine = f"{chrom}:{int(pos) + i}:{ref[i]}:{alt[i]}"
-                                vafs[sample][keyLine] = vaf
-                        else:
-                            keyLine = f"{chrom}:{pos}:{ref}:{alt}"
-                            vafs[sample][keyLine] = vaf
-
-                    except (ValueError, IndexError) as e:
-                        print(f"Error processing line in {vcfFile}: {line}\n{e}")
-                        continue
-    elif variant_caller == "custom":
-        field = vaf_field  # The VAF field in the FORMAT column
-        vafs = {}
-
-        for vcfFile in vcf_files:
-            sample = vcfFile.split(".")[0]
-            vafs[sample] = {}
-            header = []
-
-            with open(os.path.join(vcf_path, vcfFile)) as f:
-                for line in f:
-                    # Identify the header line with column names
-                    if line.startswith("#") and not line.startswith("##"):
-                        header = line.strip().split("\t")
-                        break  # Stop after finding the header
-
-                # Check if TUMOR column exists
-
-                if len(header) <= tumor_vaf_column:
-                    print(f"Tumor column {tumor_vaf_column} not found in header of {vcfFile}. Skipping...")
-                    continue
-
-                # Get the index of the TUMOR column
-                tumor_index = tumor_vaf_column
-
-                # Process the data rows
-                for line in f:
-                    if line.startswith("#"):
-                        continue
-
-                    try:
-                        fields = line.strip().split("\t")
-                        chrom = fields[0]
-
-                        # Normalize chromosome naming
-                        if chrom.lower().startswith("chr"):
-                            chrom = chrom[3:]
-
-                        pos = fields[1]
-                        ref = fields[3]
-                        alt = fields[4]
-
-                        # Extract FORMAT field and TUMOR data
-                        fmt = fields[8].split(":")
-                        tumor_data = fields[tumor_index].split(":")
-
-                        # Get the VAF value
-                        vaf_index = fmt.index(field)
-                        vaf = float(tumor_data[vaf_index])
-
-                        # Create key for the variant
-                        if len(ref) == len(alt) and len(ref) > 1:
-                            for i in range(len(ref)):
-                                keyLine = f"{chrom}:{int(pos) + i}:{ref[i]}:{alt[i]}"
-                                vafs[sample][keyLine] = vaf
-                        else:
-                            keyLine = f"{chrom}:{pos}:{ref}:{alt}"
-                            vafs[sample][keyLine] = vaf
-
-                    except (ValueError, IndexError) as e:
-                        print(f"Error processing line in {vcfFile}: {line}\n{e}")
-                        continue
-
+    unknown, total = {}, {}
     with open(clusteredMutsFile) as f, open(
         clusteredMutsPath + project + "_clustered_vaf.txt", "w"
     ) as out:
@@ -621,15 +597,13 @@ def pullVaf(project, project_path, variant_caller="standard", tumor_vaf_column=1
         for lines in f:
             lines = lines.strip().split()
             sample = lines[1]
-            newKey = ":".join([lines[5], lines[6], lines[8], lines[9]])
-
-            try:
-                vaf = vafs[sample][newKey]
-            except:
-                newKey = ":".join(["chr" + lines[5], lines[6], lines[8], lines[9]])
-                vaf = vafs[sample][newKey]
+            vaf = _lookup_by_key(vafs, sample, lines, "VAF")
             lines.append(str(vaf))
+            total[sample] = total.get(sample, 0) + 1
+            if vaf != vaf:
+                unknown[sample] = unknown.get(sample, 0) + 1
             print("\t".join([x for x in lines]), file=out)
+    _warn_unknown_vafs("VAF", unknown, total)
 
 
 def findClustersOfClusters(
@@ -804,10 +778,10 @@ def findClustersOfClusters(
     ####################################################################################
 
     # Hard-coded cutoffs, which can later be used as additional parameters to the tool.
-    cutoff = 10001  # Min distance required between adjacenet events
-    vaf_cut = 0.1  # Max difference in VAFs of adjacent mutations
+    cutoff = constants.EVENT_GROUPING_DISTANCE  # Min distance required between adjacenet events
+    vaf_cut = constants.VAF_MAX_DIFFERENCE  # Max difference in VAFs of adjacent mutations
     if includedCCFs:
-        vaf_cut = 0.25  # Max difference in VAFs of adjacent mutations
+        vaf_cut = constants.CCF_MAX_DIFFERENCE  # Max difference in VAFs of adjacent mutations
 
     # Load the IMD data structures
     if chrom_based:
@@ -976,6 +950,9 @@ def findClustersOfClusters(
         lines[i] = [str(group_count)] + lines[i]
         print("\t".join([x for x in lines[i]]), file=out)
         total_muts[samp] += 1
+        # Audit finding 3: an event is closed by the blank separator that follows it. The last
+        # event of the table had none, so the second pass never classified it.
+        print("\n\n", file=out)
         out.close()
         with open(
             project_parent_path
@@ -1208,32 +1185,18 @@ def findClustersOfClusters(
                                     ]
                                 )
 
-                            vafs = len(
-                                [
-                                    abs(float(y[-1]) - float(x[-1]))
-                                    for x, y in zip(lines, lines[1:])
-                                    if round(abs(float(y[-1]) - float(x[-1])), 4)
-                                    > vaf_cut
-                                ]
-                            )
-                            unknownVafs = len(
-                                [
-                                    abs(float(y[-1]) - float(x[-1]))
-                                    for x, y in zip(lines, lines[1:])
-                                    if abs(float(y[-1]) - float(x[-1])) < 0
-                                ]
-                            )
+                            # Audit finding 6: unknown VAFs are skipped, the known ones are
+                            # compared consecutively
+                            vafsActual = vaf_differences(lines)
+                            vafs = len([d for d in vafsActual if d > vaf_cut])
+                            unknownVafs = vaf_unknown_count(lines)
                             distancesActual = [
                                 int(y[7]) - int(x[7]) for x, y in zip(lines, lines[1:])
                             ]
-                            vafsActual = [
-                                abs(float(y[-1]) - float(x[-1]))
-                                for x, y in zip(lines, lines[1:])
-                            ]
 
-                            if unknownVafs == 0 and vafs == 0 and distancesFailed == 0:
+                            if vafs == 0 and distancesFailed == 0:
                                 # Class I or II
-                                if distancesLine > 1:
+                                if has_class2_pattern(distancesLine, len(lines)):
                                     # Class IC or II
                                     if len(lines) >= 4:
                                         writeClassII = True
@@ -1269,50 +1232,38 @@ def findClustersOfClusters(
                         else:
                             if writeClassI:
                                 # Writes Class I (Single Events)
-                                try:
-                                    for i in range(0, len(lines), 1):
-                                        lines[i].append("ClassI")
-                                        print(
-                                            "\t".join([x for x in lines[i]]), file=out3
-                                        )
-                                except:
-                                    print(lines)
+                                for i in range(0, len(lines), 1):
+                                    lines[i].append("ClassI")
+                                    print(
+                                        "\t".join([x for x in lines[i]]), file=out3
+                                    )
 
                                 if writeClassIc:
                                     # Writes Class Ic (Omiklis)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIC"
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out8,
-                                            )
-                                    except:
-                                        print(lines)
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIC"
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out8,
+                                        )
                                 elif writeClassIa:
                                     # Writes Class Ia (DBSs)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIA"
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIA"
 
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out6,
-                                            )
-                                    except:
-                                        print(lines)
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out6,
+                                        )
                                 elif writeClassIb:
                                     # Writes Class 1b (MBSs)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIB"
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIB"
 
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out7,
-                                            )
-                                    except:
-                                        print(lines)
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out7,
+                                        )
                             elif writeClassIII:
                                 # Writes Class III (all other mutations - leftovers)
 
@@ -1327,14 +1278,12 @@ def findClustersOfClusters(
                                     writeClassIa = False
                                     saveNewEvent = [linesSubClass[0]]
                                     lineRef = linesSubClass[0]
+                                    vafRef = lineRef[-1]  # last known VAF of the chain (audit finding 6)
                                     for i in range(1, len(linesSubClass), 1):
                                         # try:
                                         if chrom_based:
                                             if correction:
-                                                if abs(
-                                                    float(linesSubClass[i][-1])
-                                                    - float(lineRef[-1])
-                                                ) < vaf_cut and (
+                                                if vaf_compatible(linesSubClass[i][-1], vafRef, vaf_cut) and (
                                                     int(linesSubClass[i][7])
                                                     - int(lineRef[7])
                                                     <= imdsData[lineRef[1]][lineRef[5]]
@@ -1375,13 +1324,11 @@ def findClustersOfClusters(
                                                         linesSubClass[i]
                                                     )
                                                     lineRef = linesSubClass[i]
+                                                    if not vaf_is_unknown(lineRef[-1]):
+                                                        vafRef = lineRef[-1]
                                             else:
                                                 if (
-                                                    abs(
-                                                        float(linesSubClass[i][-1])
-                                                        - float(lineRef[-1])
-                                                    )
-                                                    < vaf_cut
+                                                    vaf_compatible(linesSubClass[i][-1], vafRef, vaf_cut)
                                                     and int(linesSubClass[i][7])
                                                     - int(lineRef[7])
                                                     <= imdsData[lineRef[1]][lineRef[5]]
@@ -1390,12 +1337,11 @@ def findClustersOfClusters(
                                                         linesSubClass[i]
                                                     )
                                                     lineRef = linesSubClass[i]
+                                                    if not vaf_is_unknown(lineRef[-1]):
+                                                        vafRef = lineRef[-1]
                                         else:
                                             if correction:
-                                                if abs(
-                                                    float(linesSubClass[i][-1])
-                                                    - float(lineRef[-1])
-                                                ) < vaf_cut and (
+                                                if vaf_compatible(linesSubClass[i][-1], vafRef, vaf_cut) and (
                                                     int(linesSubClass[i][7])
                                                     - int(lineRef[7])
                                                     <= imdsData[lineRef[1]]
@@ -1447,19 +1393,17 @@ def findClustersOfClusters(
                                                         )
                                                     )
                                                 ):
-                                                    # if abs(float(linesSubClass[i][-1]) - float(lineRef[-1])) < vaf_cut and (int(linesSubClass[i][7])-int(lineRef[7]) <= imdsData[lineRef[1]] or (regions[lineRef[1]][hotspot.catch([".",".",lineRef[5], lineRef[7]], regions[lineRef[1]], chromLengths, genome, imds_corrected[lineRef[1]])] - (int(lineRef[7]) + chromLengths[genome][lineRef[5]]) < windowSize and int(lineRef[-2]) < imds_corrected[lineRef[1]][regions[lineRef[1]][hotspot.catch([".",".",lineRef[5], lineRef[7]], regions[lineRef[1]], chromLengths, genome, imds_corrected[lineRef[1]])]])):
-                                                    # if abs(float(linesSubClass[i][-1]) - float(lineRef[-1])) < vaf_cut and (int(linesSubClass[i][7])-int(lineRef[7]) <= imdsData[lineRef[1]] or (regions[lineRef[1]][bisect.bisect_left(regions[lineRef[1]], (int(lineRef[7]) + chromLengths[genome][lineRef[5]]))] - (int(lineRef[7]) + chromLengths[genome][lineRef[5]]) < windowSize and int(lineRef[-2]) < imds_corrected[lineRef[1]][regions[lineRef[1]][bisect.bisect_left(regions[lineRef[1]], int(lineRef[7]) + chromLengths[genome][lineRef[5]])]])):
+                                                    # if vaf_compatible(linesSubClass[i][-1], vafRef, vaf_cut) and (int(linesSubClass[i][7])-int(lineRef[7]) <= imdsData[lineRef[1]] or (regions[lineRef[1]][hotspot.catch([".",".",lineRef[5], lineRef[7]], regions[lineRef[1]], chromLengths, genome, imds_corrected[lineRef[1]])] - (int(lineRef[7]) + chromLengths[genome][lineRef[5]]) < windowSize and int(lineRef[-2]) < imds_corrected[lineRef[1]][regions[lineRef[1]][hotspot.catch([".",".",lineRef[5], lineRef[7]], regions[lineRef[1]], chromLengths, genome, imds_corrected[lineRef[1]])]])):
+                                                    # if vaf_compatible(linesSubClass[i][-1], vafRef, vaf_cut) and (int(linesSubClass[i][7])-int(lineRef[7]) <= imdsData[lineRef[1]] or (regions[lineRef[1]][bisect.bisect_left(regions[lineRef[1]], (int(lineRef[7]) + chromLengths[genome][lineRef[5]]))] - (int(lineRef[7]) + chromLengths[genome][lineRef[5]]) < windowSize and int(lineRef[-2]) < imds_corrected[lineRef[1]][regions[lineRef[1]][bisect.bisect_left(regions[lineRef[1]], int(lineRef[7]) + chromLengths[genome][lineRef[5]])]])):
                                                     saveNewEvent.append(
                                                         linesSubClass[i]
                                                     )
                                                     lineRef = linesSubClass[i]
+                                                    if not vaf_is_unknown(lineRef[-1]):
+                                                        vafRef = lineRef[-1]
                                             else:
                                                 if (
-                                                    abs(
-                                                        float(linesSubClass[i][-1])
-                                                        - float(lineRef[-1])
-                                                    )
-                                                    < vaf_cut
+                                                    vaf_compatible(linesSubClass[i][-1], vafRef, vaf_cut)
                                                     and int(linesSubClass[i][7])
                                                     - int(lineRef[7])
                                                     <= imdsData[lineRef[1]]
@@ -1468,6 +1412,8 @@ def findClustersOfClusters(
                                                         linesSubClass[i]
                                                     )
                                                     lineRef = linesSubClass[i]
+                                                    if not vaf_is_unknown(lineRef[-1]):
+                                                        vafRef = lineRef[-1]
 
                                     if len(saveNewEvent) > 1:
                                         if correction:
@@ -1548,41 +1494,17 @@ def findClustersOfClusters(
                                                     )
                                                 ]
                                             )
-                                        vafs = len(
-                                            [
-                                                abs(float(y[-1]) - float(x[-1]))
-                                                for x, y in zip(
-                                                    saveNewEvent, saveNewEvent[1:]
-                                                )
-                                                if round(
-                                                    abs(float(y[-1]) - float(x[-1])), 4
-                                                )
-                                                > vaf_cut
-                                            ]
-                                        )
-                                        unknownVafs = len(
-                                            [
-                                                abs(float(y[-1]) - float(x[-1]))
-                                                for x, y in zip(
-                                                    saveNewEvent, saveNewEvent[1:]
-                                                )
-                                                if abs(float(y[-1]) - float(x[-1])) < 0
-                                            ]
-                                        )
+                                        vafsActual = vaf_differences(saveNewEvent)
+                                        vafs = len([d for d in vafsActual if d > vaf_cut])
+                                        unknownVafs = vaf_unknown_count(saveNewEvent)
                                         distancesActual = [
                                             int(y[7]) - int(x[7])
                                             for x, y in zip(
                                                 saveNewEvent, saveNewEvent[1:]
                                             )
                                         ]
-                                        vafsActual = [
-                                            abs(float(y[-1]) - float(x[-1]))
-                                            for x, y in zip(
-                                                saveNewEvent, saveNewEvent[1:]
-                                            )
-                                        ]
                                         # Class I or II
-                                        if distancesLine > 1:
+                                        if has_class2_pattern(distancesLine, len(saveNewEvent)):
                                             if len(saveNewEvent) >= 4:
                                                 writeClassII = True
                                             else:
@@ -1633,109 +1555,91 @@ def findClustersOfClusters(
                                     else:
                                         if writeClassI:
                                             # Writes Class I (Single Events)
-                                            try:
-                                                for i in range(0, len(saveNewEvent), 1):
-                                                    saveNewEvent[i].append("ClassI")
-                                                    print(
-                                                        "\t".join(
-                                                            [x for x in saveNewEvent[i]]
-                                                        ),
-                                                        file=out3,
-                                                    )
+                                            for i in range(0, len(saveNewEvent), 1):
+                                                saveNewEvent[i].append("ClassI")
+                                                print(
+                                                    "\t".join(
+                                                        [x for x in saveNewEvent[i]]
+                                                    ),
+                                                    file=out3,
+                                                )
 
-                                            except:
-                                                print(saveNewEvent)
 
                                             if writeClassIc:
                                                 # Writes Class Ic (extended MBSs)
-                                                try:
-                                                    for i in range(0, len(saveNewEvent), 1):
-                                                        saveNewEvent[i][-1] = "ClassIC"
-                                                        print(
-                                                            "\t".join(
-                                                                [
-                                                                    x
-                                                                    for x in saveNewEvent[
-                                                                        i
-                                                                    ]
+                                                for i in range(0, len(saveNewEvent), 1):
+                                                    saveNewEvent[i][-1] = "ClassIC"
+                                                    print(
+                                                        "\t".join(
+                                                            [
+                                                                x
+                                                                for x in saveNewEvent[
+                                                                    i
                                                                 ]
-                                                            ),
-                                                            file=out8,
-                                                        )
-                                                except:
-                                                    print(saveNewEvent)
+                                                            ]
+                                                        ),
+                                                        file=out8,
+                                                    )
                                             elif writeClassIa:
                                                 # Writes Class Ia (DBSs)
-                                                try:
-                                                    for i in range(
-                                                        0, len(saveNewEvent), 1
-                                                    ):
-                                                        saveNewEvent[i][-1] = "ClassIA"
-                                                        print(
-                                                            "\t".join(
-                                                                [
-                                                                    x
-                                                                    for x in saveNewEvent[
-                                                                        i
-                                                                    ]
+                                                for i in range(
+                                                    0, len(saveNewEvent), 1
+                                                ):
+                                                    saveNewEvent[i][-1] = "ClassIA"
+                                                    print(
+                                                        "\t".join(
+                                                            [
+                                                                x
+                                                                for x in saveNewEvent[
+                                                                    i
                                                                 ]
-                                                            ),
-                                                            file=out6,
-                                                        )
-                                                except:
-                                                    print(saveNewEvent)
+                                                            ]
+                                                        ),
+                                                        file=out6,
+                                                    )
                                             elif writeClassIb:
                                                 # print("yes")
                                                 # Writes Class 1b (MBSs)
-                                                try:
-                                                    for i in range(
-                                                        0, len(saveNewEvent), 1
-                                                    ):
-                                                        saveNewEvent[i][-1] = "ClassIB"
-                                                        print(
-                                                            "\t".join(
-                                                                [
-                                                                    x
-                                                                    for x in saveNewEvent[
-                                                                        i
-                                                                    ]
+                                                for i in range(
+                                                    0, len(saveNewEvent), 1
+                                                ):
+                                                    saveNewEvent[i][-1] = "ClassIB"
+                                                    print(
+                                                        "\t".join(
+                                                            [
+                                                                x
+                                                                for x in saveNewEvent[
+                                                                    i
                                                                 ]
-                                                            ),
-                                                            file=out7,
-                                                        )
-                                                    # print("yes", saveNewEvent)
-                                                except:
-                                                    print(saveNewEvent)
+                                                            ]
+                                                        ),
+                                                        file=out7,
+                                                    )
+                                                # print("yes", saveNewEvent)
 
                                         elif writeClassIII:
                                             # print("yes")
-                                            try:
-                                                for i in range(0, len(saveNewEvent), 1):
-                                                    saveNewEvent[i].append("ClassIII")
-                                                    saveNewEvent[i].append(category)
-                                                    print(
-                                                        "\t".join(
-                                                            [x for x in saveNewEvent[i]]
-                                                        ),
-                                                        file=out5,
-                                                    )
-                                            except:
-                                                print(saveNewEvent)
+                                            for i in range(0, len(saveNewEvent), 1):
+                                                saveNewEvent[i].append("ClassIII")
+                                                saveNewEvent[i].append(category)
+                                                print(
+                                                    "\t".join(
+                                                        [x for x in saveNewEvent[i]]
+                                                    ),
+                                                    file=out5,
+                                                )
                                 if len(linesSubClass) != 0:
-                                    try:
-                                        category = "vaf"
-                                        for i in range(0, len(linesSubClass), 1):
-                                            linesSubClass[i].append("ClassIII")
-                                            linesSubClass[i].append(category)
+                                    category = "vaf"
+                                    for i in range(0, len(linesSubClass), 1):
+                                        linesSubClass[i].append("ClassIII")
+                                        linesSubClass[i].append(category)
 
-                                            print(
-                                                "\t".join(
-                                                    [x for x in linesSubClass[i]]
-                                                ),
-                                                file=out5,
-                                            )
-                                    except:
-                                        print(linesSubClass)
+                                        print(
+                                            "\t".join(
+                                                [x for x in linesSubClass[i]]
+                                            ),
+                                            file=out5,
+                                        )
 
                     lines = []
 
@@ -2016,7 +1920,7 @@ def findClustersOfClusters_noVAF(
     ####################################################################################
 
     # Hard-coded cutoffs, which can later be used as additional parameters to the tool.
-    cutoff = 10001  # Min distance required between adjacenet events
+    cutoff = constants.EVENT_GROUPING_DISTANCE  # Min distance required between adjacenet events
 
     # Load the IMD data structures
     if chrom_based:
@@ -2158,6 +2062,9 @@ def findClustersOfClusters_noVAF(
         lines[i] = [str(group_count)] + lines[i]
         print("\t".join([x for x in lines[i]]), file=out)
         total_muts[samp] += 1
+        # Audit finding 3: an event is closed by the blank separator that follows it. The last
+        # event of the table had none, so the second pass never classified it.
+        print("\n\n", file=out)
         out.close()
         with open(
             project_parent_path
@@ -2388,7 +2295,7 @@ def findClustersOfClusters_noVAF(
 
                             if distancesFailed == 0:
                                 # Class I or II
-                                if distancesLine > 1:
+                                if has_class2_pattern(distancesLine, len(lines)):
                                     # Class IC or II
                                     if len(lines) >= 4:
                                         writeClassII = True
@@ -2421,48 +2328,36 @@ def findClustersOfClusters_noVAF(
                         else:
                             if writeClassI:
                                 # Writes Class I (Single Events)
-                                try:
-                                    for i in range(0, len(lines), 1):
-                                        lines[i].append("ClassI")
-                                        print(
-                                            "\t".join([x for x in lines[i]]), file=out3
-                                        )
-                                except:
-                                    print(lines)
+                                for i in range(0, len(lines), 1):
+                                    lines[i].append("ClassI")
+                                    print(
+                                        "\t".join([x for x in lines[i]]), file=out3
+                                    )
 
                                 if writeClassIc:
                                     # Writes Class Ic (Omiklis)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIC"
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out8,
-                                            )
-                                    except:
-                                        print(lines)
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIC"
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out8,
+                                        )
                                 elif writeClassIa:
                                     # Writes Class Ia (DBSs)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIA"
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out6,
-                                            )
-                                    except:
-                                        print(lines)
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIA"
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out6,
+                                        )
                                 elif writeClassIb:
                                     # Writes Class 1b (MBSs)
-                                    try:
-                                        for i in range(0, len(lines), 1):
-                                            lines[i][-1] = "ClassIB"
-                                            print(
-                                                "\t".join([x for x in lines[i]]),
-                                                file=out7,
-                                            )
-                                    except:
-                                        print(lines)
+                                    for i in range(0, len(lines), 1):
+                                        lines[i][-1] = "ClassIB"
+                                        print(
+                                            "\t".join([x for x in lines[i]]),
+                                            file=out7,
+                                        )
 
                     lines = []
 
@@ -2584,7 +2479,7 @@ def findClustersOfClusters_noVAF(
 
             if distancesFailed == 0:
                 # Class I or II
-                if distancesLine > 1:
+                if has_class2_pattern(distancesLine, len(lines)):
                     # Class IC or II
                     if len(lines) >= 4:
                         writeClassII = True
@@ -2615,37 +2510,25 @@ def findClustersOfClusters_noVAF(
             else:
                 if writeClassI:
                     # Writes Class I (Single Events)
-                    try:
-                        for i in range(0, len(lines), 1):
-                            lines[i].append("ClassI")
-                            print("\t".join([x for x in lines[i]]), file=out3)
-                    except:
-                        print(lines)
+                    for i in range(0, len(lines), 1):
+                        lines[i].append("ClassI")
+                        print("\t".join([x for x in lines[i]]), file=out3)
 
                     if writeClassIc:
                         # Writes Class Ic (Omiklis)
-                        try:
-                            for i in range(0, len(lines), 1):
-                                lines[i][-1] = "ClassIC"
-                                print("\t".join([x for x in lines[i]]), file=out8)
-                        except:
-                            print(lines)
+                        for i in range(0, len(lines), 1):
+                            lines[i][-1] = "ClassIC"
+                            print("\t".join([x for x in lines[i]]), file=out8)
                     elif writeClassIa:
                         # Writes Class Ia (DBSs)
-                        try:
-                            for i in range(0, len(lines), 1):
-                                lines[i][-1] = "ClassIA"
-                                print("\t".join([x for x in lines[i]]), file=out6)
-                        except:
-                            print(lines)
+                        for i in range(0, len(lines), 1):
+                            lines[i][-1] = "ClassIA"
+                            print("\t".join([x for x in lines[i]]), file=out6)
                     elif writeClassIb:
                         # Writes Class 1b (MBSs)
-                        try:
-                            for i in range(0, len(lines), 1):
-                                lines[i][-1] = "ClassIB"
-                                print("\t".join([x for x in lines[i]]), file=out7)
-                        except:
-                            print(lines)
+                        for i in range(0, len(lines), 1):
+                            lines[i][-1] = "ClassIB"
+                            print("\t".join([x for x in lines[i]]), file=out7)
 
         with open(project_path + "clusteredStats" + path_suffix + ".pickle", "wb") as f:
             pickle.dump(len_mnvs, f)
@@ -2747,16 +2630,36 @@ def findClustersOfClusters_noVAF(
 
 
 def generateMatrices(genome, log_out, project_path, path_suffix, subclassesProcessor):
+    """Generates the matrices of every subclass that has mutations. A subclass whose
+    table only has the header (no mutations) is skipped; any other error is raised.
+    The standard output is always restored."""
     temp = sys.stdout
     sys.stdout = open(log_out, "a")
     try:
         for subclass in subclassesProcessor:
-            matrices = matGen.SigProfilerMatrixGeneratorFunc(
+            folder = project_path + "subclasses" + path_suffix + "/" + subclass + "/"
+            if not _subclass_has_mutations(folder):
+                continue
+            matGen.SigProfilerMatrixGeneratorFunc(
                 subclass,
                 genome,
-                project_path + "subclasses" + path_suffix + "/" + subclass + "/",
+                folder,
                 seqInfo=True,
-            )  # , plot=True)
+            )
+    finally:
         sys.stdout.close()
-    except:
-        pass
+        sys.stdout = temp
+
+
+def _subclass_has_mutations(folder):
+    """True if any table of the folder has a line besides its header."""
+    if not os.path.isdir(folder):
+        return False
+    for name in os.listdir(folder):
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            with open(path) as f:
+                next(f, None)
+                if any(line.strip() for line in f):
+                    return True
+    return False
