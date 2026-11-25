@@ -47,7 +47,7 @@ setup(
         "matplotlib>=3.9.0",
         "sigProfilerPlotting>=1.4.1",
         "SigProfilerMatrixGenerator>=1.3.2",
-        "SigProfilerSimulator>=1.2.1",
+        "SigProfilerSimulator>=1.3.2",
         "statsmodels>=0.14.2",
         "scipy>=1.13.0",
         "pandas>=2.2.2",

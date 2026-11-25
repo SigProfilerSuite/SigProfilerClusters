@@ -55,13 +55,6 @@ jobs:
           wget --connect-timeout=10 --tries=20 ftp://alexandrovlab-ftp.ucsd.edu/pub/tools/SigProfilerMatrixGenerator/GRCh37.tar.gz -P ${{ github.workspace }}/src/
         fi
     
-    # TEMPORARY (audit finding 120): the tests need SigProfilerSimulator >= 1.3.2 (the seed file
-    # alone fixes the simulations), which is not on PyPI yet (the latest there is 1.2.2). Remove
-    # this step and raise the requirement in setup.py to >=1.3.2 once it is published.
-    - name: Install SigProfilerSimulator 1.3.2 from GitHub (temporary)
-      run: |
-        pip install "git+https://github.com/SigProfilerSuite/SigProfilerSimulator.git@v1.3.2"
-
     - name: Install package with tests
       run: |
         pip install .[tests]
