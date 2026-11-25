@@ -213,3 +213,45 @@ def test_simulations_are_reproducible_with_the_seed_file(tmp_path):
     assert files == sorted(p.relative_to(runs[1]) for p in runs[1].rglob("*") if p.is_file())
     different = [str(f) for f in files if (runs[0] / f).read_bytes() != (runs[1] / f).read_bytes()]
     assert not different, f"simulations differ between two runs with the same seed file: {different}"
+
+
+def _data_files(output):
+    """Relative paths of the data files of a run. The logs (time stamps, paths) and the PDFs
+    (creation date) change with every run and are not results."""
+    return sorted(
+        p.relative_to(output)
+        for p in output.rglob("*")
+        if p.is_file() and "logs" not in p.relative_to(output).parts and p.suffix != ".pdf"
+    )
+
+
+def test_full_pipeline_is_repeatable_with_the_seed_file(tmp_path):
+    """Audit finding 4: two complete runs (SigProfilerSimulator and SigProfilerClusters) on the
+    same input and the same seed file give identical results. It needs SigProfilerSimulator
+    1.3.2 (before, the simulations differed between runs)."""
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    seed_file = os.path.join(base_path, "seeds_file", "Simulator_seeds.txt")
+    vcf = os.path.join(base_path, "input_vcf_sim", "standard", "standard.vcf")
+
+    outputs = []
+    for number in range(2):
+        project_path = tmp_path / f"run{number}"
+        project_path.mkdir()
+        shutil.copy(vcf, project_path)
+        path = str(project_path) + os.sep
+        sigSim.SigProfilerSimulator(
+            project="standard", project_path=path, genome="GRCh37", contexts=["96"],
+            seed_file=seed_file, simulations=100,
+        )
+        hp.analysis(
+            project="standard", genome="GRCh37", contexts="SBS96", simContext=["96"],
+            input_path=path, analysis="all", sortSims=True, subClassify=True, correction=True,
+            calculateIMD=True, variant_caller="standard", max_cpu=2,
+        )
+        outputs.append(project_path / "output")
+
+    files = _data_files(outputs[0])
+    assert len(files) > 100, "too few result files to be a meaningful comparison"
+    assert files == _data_files(outputs[1])
+    different = [str(f) for f in files if (outputs[0] / f).read_bytes() != (outputs[1] / f).read_bytes()]
+    assert not different, f"results differ between two runs with the same seed file: {different[:10]}"
