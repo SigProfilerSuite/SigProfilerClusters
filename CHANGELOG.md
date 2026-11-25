@@ -6,6 +6,80 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-25
+
+### Added
+
+- feat(analysis): report together the samples that the analysis skips
+
+- feat(analysis)!: standardize the context names to SBS96 and ID83
+
+- feat(cli): expose --tumor_vaf_column and --vaf_field
+
+
+### Changed
+
+- build: require Python >=3.11 and declare coherent dependency lower bounds
+
+- refactor: name the scientific thresholds in a constants module
+
+- test: seed the global generators before the simulator in the integration test
+
+- test: repeat the subclassification only for one variant caller
+
+- test: rely on the seed file of SigProfilerSimulator 1.3.2 instead of seeding random and numpy
+
+- test: remove the tests of the random/numpy seeding that no longer exists
+
+- build: require SigProfilerSimulator>=1.3.2 and drop the temporary GitHub install
+
+- test: two complete runs with the same seed file give identical results
+
+- docs: SigProfilerSimulator 1.3.2 or later is required
+
+- test: pair the folders that only differ in their uuid in the repeatability test
+
+
+### Fixed
+
+- fix(hotspot): report the central 95% interval of the simulated counts
+
+- fix(rainfall): do not crash when a subclass has a single mutation for a chromosome
+
+- fix(classify): classify the last event of the clustered table
+
+- fix(distance): compute the IMD of each sample on its own
+
+- fix(vaf): read VAFs by exact key and do not compare the missing ones
+
+- fix(density): find the dense regions of the sample and apply their corrected cutoff
+
+- fix(classify): an event of four or more mutations with one gap is class II
+
+- fix(errors): stop swallowing errors in matrix generation, regions and subclass output
+
+- fix(analysis): accept only output_type "all" and reject the others at the start
+
+- fix(analysis): reuse the saved results when analysis is "subClassify"
+
+- fix(analysis): pass the normalized path to the subclassification and the plots
+
+- fix(hotspot): check the matrix of the requested context for clustered mutations
+
+- fix(analysis): restore sys.stderr when the analysis ends, also on errors
+
+- fix(analysis)!: raise package exceptions instead of calling sys.exit()
+
+- fix(analysis): reject a genome without centromere data at the start
+
+- fix(analysis): validate the arguments and the input folder at the start
+
+- fix(analysis): put the time in the names of the log files
+
+- fix(hotspot): report a clear error when the simulations give no distances
+
+- fix(distance): write the distances of an original sample in a fixed order
+
 ## [1.2.5] - 2026-11-22
 
 ### Changed
