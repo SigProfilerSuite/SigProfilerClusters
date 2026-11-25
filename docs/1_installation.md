@@ -13,7 +13,7 @@ This section will help you set up the necessary software and packages required t
 
 - [Python][1] version >= 3.11
 - [SigProfilerMatrixGenerator][2] with a downloaded reference genome (required to generate mutational matrices and simulations)
-- [SigProfilerSimulator][3] (required to generate the background model used for IMD threshold calculation)
+- [SigProfilerSimulator][3] version >= 1.3.2 (required to generate the background model used for IMD threshold calculation). From 1.3.2 the seed file given to the simulator (`seed_file`) fixes the simulations, so two runs on the same input give the same results; earlier versions distribute the mutations over the chromosomes with unseeded generators
 - Other dependencies are installed automatically during package installation
 
 ## Installation ##
