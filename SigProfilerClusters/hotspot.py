@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from . import constants
+from .exceptions import MissingSimulationsError
 import os
 import numpy as np
 import statistics
@@ -1306,6 +1307,20 @@ def calculateSampleIMDs(
     # return(imds)
 
 
+def check_simulated_distances(folders, directory):
+    """The simulations must give distances for at least one sample. When no simulated sample
+    has two mutations on the same chromosome there is nothing to estimate the IMD cutoffs from;
+    without this check the pool of processes was created with 0 workers and multiprocessing
+    raised an uninformative ValueError (audit finding 115)."""
+    samples = [x for x in folders if x not in (".DS_Store", ".DS_Store_intradistance.txt")]
+    if not samples:
+        raise MissingSimulationsError(
+            "No simulated sample has any pair of mutations on the same chromosome, so there are "
+            "no simulated distances to calculate the IMD cutoffs (looked in " + str(directory) + "). "
+            "Simulate more mutations or use an input with more mutations."
+        )
+
+
 def report_skipped_samples(skipped_samples, table_path, log_file):
     """Reports together the samples that the analysis skipped, with the reason: on the screen,
     at the end of the log file and in a tab-separated table. Without skipped samples nothing
@@ -1770,6 +1785,7 @@ def hotSpotAnalysis(
     skipped_samplesFinal = {}
 
     folders = os.listdir(directory)
+    check_simulated_distances(folders, directory)
 
     ############################################################################################################
     # Start calculating the IMDs for each sample. This includes IMD corrections and calculations for both the
