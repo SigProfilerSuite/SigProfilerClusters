@@ -26,6 +26,13 @@ import pickle
 import bisect
 
 
+def _panel_ylim(y):
+    """Limits of the y axis of a catalog panel. An all-zero matrix has y == 0: matplotlib then
+    widens the identical limits itself to [-0.05, 0.05] and warns about it; they are given
+    explicitly (same figure, audit finding 122)."""
+    return [0, y] if y > 0 else [-0.05, 0.05]
+
+
 def plot96_same(
     matrix_path,
     matrix_path_clustered,
@@ -249,7 +256,7 @@ def plot96_same(
 
     labs = np.arange(0.375, 96.375, 1)
     panel1.set_xlim([0, 96])
-    panel1.set_ylim([0, y])
+    panel1.set_ylim(_panel_ylim(y))
     panel1.set_xticks(labs)
     panel1.set_yticks(ylabs)
     count = 0
@@ -511,10 +518,10 @@ def plot96_same(
     labs = np.arange(0.375, 96.375, 1)
 
     panel3.set_xlim([0, 96])
-    panel3.set_yticklabels(ylabels, fontsize=8, color="b")
-    panel3.set_ylim([0, y])
+    panel3.set_ylim(_panel_ylim(y))
     panel3.set_xticks(labs)
     panel3.set_yticks(ylabs)
+    panel3.set_yticklabels(ylabels, fontsize=8, color="b")
     count = 0
     m = 0
     for i in range(0, 96, 1):
@@ -770,10 +777,10 @@ def plot96_same(
     labs = np.arange(0.375, 96.375, 1)
 
     panel5.set_xlim([0, 96])
-    panel5.set_yticklabels(ylabels, fontsize=8, color="b")
-    panel5.set_ylim([0, y])
+    panel5.set_ylim(_panel_ylim(y))
     panel5.set_xticks(labs)
     panel5.set_yticks(ylabs)
+    panel5.set_yticklabels(ylabels, fontsize=8, color="b")
     panel5.grid(which="major", axis="y", color=[0.93, 0.93, 0.93], zorder=1)
     count = 0
     m = 0
@@ -1622,10 +1629,10 @@ def plotINDEL_same(
 
     labs = np.arange(0.375, 83.375, 1)
     panel1.set_xlim([0, 83])
-    panel1.set_yticklabels(ylabels, fontsize=8, color="b")
-    panel1.set_ylim([0, y])
+    panel1.set_ylim(_panel_ylim(y))
     panel1.set_xticks(labs)
     panel1.set_yticks(ylabs)
+    panel1.set_yticklabels(ylabels, fontsize=8, color="b")
     panel1.set_yticklabels(ylabels, fontsize=8)
     panel1.grid(which="major", axis="y", color=[0.6, 0.6, 0.6], zorder=1)
     panel1.set_xlabel("")
@@ -2270,10 +2277,10 @@ def plotINDEL_same(
         ]
 
     panel3.set_xlim([0, 83])
-    panel3.set_yticklabels(ylabels, fontsize=8, color="b")
-    panel3.set_ylim([0, y])
+    panel3.set_ylim(_panel_ylim(y))
     panel3.set_xticks(labs)
     panel3.set_yticks(ylabs)
+    panel3.set_yticklabels(ylabels, fontsize=8, color="b")
     panel3.set_yticklabels(ylabels, fontsize=8)
     panel3.grid(which="major", axis="y", color=[0.6, 0.6, 0.6], zorder=1)
     panel3.set_xlabel("")
@@ -2919,10 +2926,10 @@ def plotINDEL_same(
         ]
 
     panel5.set_xlim([0, 83])
-    panel5.set_yticklabels(ylabels, fontsize=8, color="b")
-    panel5.set_ylim([0, y])
+    panel5.set_ylim(_panel_ylim(y))
     panel5.set_xticks(labs)
     panel5.set_yticks(ylabs)
+    panel5.set_yticklabels(ylabels, fontsize=8, color="b")
     panel5.set_yticklabels(ylabels, fontsize=8)
     panel5.grid(which="major", axis="y", color=[0.6, 0.6, 0.6], zorder=1)
 
