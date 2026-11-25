@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 
 import pytest
@@ -215,14 +216,38 @@ def test_simulations_are_reproducible_with_the_seed_file(tmp_path):
     assert not different, f"simulations differ between two runs with the same seed file: {different}"
 
 
+UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
 def _data_files(output):
-    """Relative paths of the data files of a run. The logs (time stamps, paths) and the PDFs
-    (creation date) change with every run and are not results."""
-    return sorted(
-        p.relative_to(output)
-        for p in output.rglob("*")
-        if p.is_file() and "logs" not in p.relative_to(output).parts and p.suffix != ".pdf"
-    )
+    """{path relative to output: file} of the data files of a run. The logs (time stamps, paths)
+    and the PDFs (creation date) change with every run and are not results. Newer versions of
+    SigProfilerMatrixGenerator copy their input into folders named <name>_<uuid>, with a new
+    uuid in every run: it is replaced in the key so that the files of two runs can be paired."""
+    found = {}
+    for path in output.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(output)
+        if "logs" in relative.parts or path.suffix == ".pdf":
+            continue
+        key = UUID.sub("UUID", relative.as_posix())
+        assert key not in found, f"two files with the same name once the uuid is removed: {key}"
+        found[key] = path
+    return found
+
+
+def test_data_files_pairs_the_folders_that_only_differ_in_their_uuid(tmp_path):
+    for run, uuid in (("a", "55b841a4-cf24-4571-a1ba-7fe55cfb274a"), ("b", "4b44f91d-cfda-4b3e-9231-a4ed02bd1a80")):
+        folder = tmp_path / run / "vcf_files" / "SNV" / "input" / f"standard_clustered_{uuid}"
+        folder.mkdir(parents=True)
+        (folder / "standard_clustered.txt").write_text("same")
+        (tmp_path / run / "logs").mkdir()
+        (tmp_path / run / "logs" / f"{run}.out").write_text("different")
+        (tmp_path / run / "plot.pdf").write_bytes(b"date")
+    first, second = _data_files(tmp_path / "a"), _data_files(tmp_path / "b")
+    assert sorted(first) == sorted(second)
+    assert list(first) == ["vcf_files/SNV/input/standard_clustered_UUID/standard_clustered.txt"]
 
 
 def test_full_pipeline_is_repeatable_with_the_seed_file(tmp_path):
@@ -250,8 +275,8 @@ def test_full_pipeline_is_repeatable_with_the_seed_file(tmp_path):
         )
         outputs.append(project_path / "output")
 
-    files = _data_files(outputs[0])
+    files, other = _data_files(outputs[0]), _data_files(outputs[1])
     assert len(files) > 100, "too few result files to be a meaningful comparison"
-    assert files == _data_files(outputs[1])
-    different = [str(f) for f in files if (outputs[0] / f).read_bytes() != (outputs[1] / f).read_bytes()]
+    assert sorted(files) == sorted(other)
+    different = [key for key in files if files[key].read_bytes() != other[key].read_bytes()]
     assert not different, f"results differ between two runs with the same seed file: {different[:10]}"
