@@ -225,3 +225,83 @@ class TestId83:
         paths = _matrices(tmp_path, labels, counts, [1] * 83, [1] * 83)
         _, axes = _plot("ID83", paths)
         assert _bars(axes[0])[-1] == 7.0
+
+
+# ─── matplotlib warnings (audit finding 122) ─────────────────
+
+import warnings
+
+from SigProfilerClusters import plottingFunctions
+
+OPTIONS = [(False, False), (True, False), (False, True)]  # (percentage, signature)
+
+
+def _draw(kind, paths, **kwargs):
+    """Draw the catalog turning the two matplotlib warnings of finding 122 into errors"""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*set_ticklabels.*")
+        warnings.filterwarnings("error", message=".*identical low and high ylims.*")
+        fig, axes = _plot(kind, paths, **kwargs)
+        fig.canvas.draw()
+    return fig, axes
+
+
+class TestMatplotlibWarnings:
+    @pytest.mark.parametrize("percentage, signature", OPTIONS)
+    def test_the_labels_of_the_y_axis_are_set_after_its_ticks(self, tmp_path, catalog, percentage, signature):
+        kind, labels = catalog
+        n = len(labels)
+        paths = _matrices(tmp_path, labels, list(range(1, n + 1)), [2] * n, [3] * n)
+        _draw(kind, paths, percentage=percentage, signature=signature)
+
+    def test_a_matrix_of_zeros_does_not_ask_for_identical_limits(self, tmp_path, catalog):
+        kind, labels = catalog
+        n = len(labels)
+        paths = _matrices(tmp_path, labels, [0] * n, [0] * n, [0] * n)
+        _draw(kind, paths)
+
+    def test_helper_keeps_the_limits_that_matplotlib_chose_for_zero(self):
+        assert plottingFunctions._panel_ylim(0) == [-0.05, 0.05]
+        assert plottingFunctions._panel_ylim(48) == [0, 48]
+
+
+class TestYAxisIsUnchanged:
+    """What the figures show must stay as it was: these pass before and after the change"""
+
+    @pytest.mark.parametrize("percentage, signature", OPTIONS)
+    def test_every_label_is_the_text_of_its_tick(self, tmp_path, catalog, percentage, signature):
+        kind, labels = catalog
+        n = len(labels)
+        paths = _matrices(tmp_path, labels, list(range(1, n + 1)), [2] * n, [3] * n)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fig, axes = _plot(kind, paths, percentage=percentage, signature=signature)
+            fig.canvas.draw()
+        for axis in axes:
+            ticks = [float(t) for t in axis.get_yticks()]
+            assert ticks[0] == 0
+            steps = {round(b - a, 6) for a, b in zip(ticks, ticks[1:])}
+            assert len(steps) == 1  # equally spaced
+            texts = [t.get_text() for t in axis.get_yticklabels()]
+            assert len(texts) == len(ticks)
+            assert texts[0] == "0"
+            assert {t.get_color() for t in axis.get_yticklabels()} == {"black"}
+
+    def test_the_y_axis_ends_at_the_top_tick(self, tmp_path, catalog):
+        kind, labels = catalog
+        n = len(labels)
+        paths = _matrices(tmp_path, labels, list(range(1, n + 1)), [2] * n, [3] * n)
+        _, axes = _plot(kind, paths)
+        for axis in axes:
+            assert axis.get_ylim()[0] == 0
+            assert axis.get_ylim()[1] == pytest.approx(float(axis.get_yticks()[-1]))
+
+    def test_a_matrix_of_zeros_keeps_its_limits(self, tmp_path, catalog):
+        kind, labels = catalog
+        n = len(labels)
+        paths = _matrices(tmp_path, labels, [0] * n, [0] * n, [0] * n)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, axes = _plot(kind, paths)
+        for axis in axes:
+            assert tuple(round(v, 6) for v in axis.get_ylim()) == (-0.05, 0.05)

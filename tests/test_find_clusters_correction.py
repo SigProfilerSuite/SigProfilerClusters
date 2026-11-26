@@ -4,7 +4,6 @@ Every test runs on both functions with the same synthetic table. Dense regions a
 as `regions` (sample -> sorted cumulative positions) and `imds_corrected` (sample ->
 {region edge: corrected IMD cutoff}); the global sample cutoff is 100 bp.
 The matrix generation step needs a genome and is stubbed.
-Tests marked xfail record behavior that looks wrong and is planned for a later fix.
 Run with: pytest tests/test_find_clusters_correction.py -v
 """
 
@@ -182,12 +181,6 @@ class TestCorrectedClassification:
 
 @pytest.mark.parametrize("variant", VARIANTS)
 class TestSuspectedProblems:
-    @pytest.mark.xfail(
-        reason="with correction=True a distance above the global cutoff is not counted as "
-        "failed when the sample has no dense region (distancesFailed requires regions), "
-        "so the pair becomes omikli; correction=False declassifies it",
-        strict=True,
-    )
     def test_distance_above_the_global_cutoff_without_regions_is_not_an_event(
         self, tmp_path, variant
     ):
@@ -195,12 +188,6 @@ class TestSuspectedProblems:
         clustered = _run(tmp_path, variant, rows)
         assert _positions(clustered, "class1c") == []
 
-    @pytest.mark.xfail(
-        reason="a distance above both the global and the corrected cutoff is still "
-        "classified as omikli: distancesFailed passes the per-sample imds_corrected "
-        "dictionary to cutoffCatch, which looks the sample up inside it",
-        strict=True,
-    )
     def test_distance_above_the_corrected_cutoff_is_not_an_event(self, tmp_path, variant):
         rows = [_mutation(variant, 1000), _mutation(variant, 9000, imd=8000)]
         clustered = _run(tmp_path, variant, rows, DENSE, _dense(5000))
@@ -215,3 +202,34 @@ class TestSuspectedProblems:
             tmp_path, variant, rows, {"S1": [3_000_000]}, {"S1": {3_000_000: 50000}}
         )
         assert _positions(clustered, "class1c") == [2_000_000, 2_030_000]
+
+
+# ─── without dense regions, correction=True must classify like correction=False (finding 117) ───
+
+
+def _mixed_table(variant):
+    """A pair inside the cutoff, a pair above it, four mutations inside it and eight mutations
+    with a distance of 370 (global cutoff 100) between the fourth and the fifth; each of them
+    is close to its other neighbor (imd 10), so the table calls it clustered."""
+    rows = [
+        _mutation(variant, 1000), _mutation(variant, 1010, imd=10),          # pair inside the cutoff
+        _mutation(variant, 3000), _mutation(variant, 3200, imd=200),         # pair above the cutoff
+        _mutation(variant, 5000), _mutation(variant, 5010, imd=10),          # event of eight mutations
+        _mutation(variant, 5020, imd=10), _mutation(variant, 5030, imd=10),  # and a gap of 370 between them
+        _mutation(variant, 5400, imd=10), _mutation(variant, 5410, imd=10),
+        _mutation(variant, 5420, imd=10), _mutation(variant, 5430, imd=10),
+        _mutation(variant, 8000), _mutation(variant, 8010, imd=10),          # four inside the cutoff
+        _mutation(variant, 8020, imd=10), _mutation(variant, 8030, imd=10),
+    ]
+    return rows
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+class TestWithoutDenseRegionsCorrectionChangesNothing:
+    def test_same_classification_with_and_without_the_correction(self, tmp_path, variant):
+        (tmp_path / "with").mkdir()
+        (tmp_path / "without").mkdir()
+        corrected = _run(tmp_path / "with", variant, _mixed_table(variant), correction=True)
+        plain = _run(tmp_path / "without", variant, _mixed_table(variant), correction=False)
+        for name in SUBCLASSES:
+            assert _positions(corrected, name) == _positions(plain, name), name

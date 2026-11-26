@@ -52,8 +52,22 @@ def z_test(x, mu, sigma):
     Returns:
             z	->	z-score (float)
             p	->	associated p_value (float)
+
+    x, mu and sigma can be numbers or arrays. When sigma is 0 (identical simulated counts) the
+    simulations are deterministic: an excess is infinitely far (z = inf, p = 0), an observed
+    count equal to the mean is not significant (z = 0, p = 1) and a deficit is -inf (p = 2, as
+    the two-sided formula gives). Before, 0 / 0 gave NaN, which also spoiled the other q-values
+    when refineIMD corrects two p-values together (audit finding 123).
     """
-    z = (x - mu) / sigma
+    difference = np.asarray(x - mu, dtype=float)
+    sd = np.asarray(sigma, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        z = difference / sd
+    z = np.where(
+        sd == 0, np.where(difference > 0, np.inf, np.where(difference < 0, -np.inf, 0.0)), z
+    )
+    if z.ndim == 0:
+        z = z[()]
     p = 2 * (1 - norm.cdf(z))
     return (z, p)
 

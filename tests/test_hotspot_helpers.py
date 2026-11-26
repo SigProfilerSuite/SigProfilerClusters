@@ -43,14 +43,63 @@ class TestZTest:
         _, p_large = z_test(20, 10, 2)
         assert p_large < p_small
 
-    def test_zero_sigma_raises(self):
-        with pytest.raises(ZeroDivisionError):
-            z_test(5, 3, 0)
+    def test_zero_sigma_is_defined(self):
+        # audit finding 123: it used to raise ZeroDivisionError (python numbers) or give NaN (numpy)
+        z, p = z_test(5, 3, 0)
+        assert z == math.inf and p == 0
 
     def test_numpy_arrays(self):
         z, p = z_test(np.array([12.0, 10.0]), np.array([10.0, 10.0]), np.array([2.0, 2.0]))
         assert list(z) == [1.0, 0.0]
         assert len(p) == 2
+
+
+class TestZTestWithZeroSigma:
+    """Audit finding 123: identical simulated counts (sigma 0) used to give NaN (observed equal
+    to the mean) and RuntimeWarnings, and the NaN spoiled the FDR correction of refineIMD, which
+    corrects two p-values together. With sigma 0 the simulations are deterministic."""
+
+    def test_an_excess_is_infinitely_far_and_has_p_zero(self):
+        z, p = z_test(12, 10, 0)
+        assert z == math.inf and p == 0
+
+    def test_observed_equal_to_the_mean_is_not_significant(self):
+        z, p = z_test(10, 10, 0)
+        assert z == 0 and p == pytest.approx(1.0)
+
+    def test_a_deficit_keeps_the_two_sided_formula(self):
+        z, p = z_test(8, 10, 0)
+        assert z == -math.inf and p == pytest.approx(2.0)
+
+    def test_numpy_scalars_give_the_same(self):
+        for observed, expected in ((12.0, (math.inf, 0.0)), (10.0, (0.0, 1.0)), (8.0, (-math.inf, 2.0))):
+            z, p = z_test(np.float64(observed), np.float64(10.0), np.float64(0.0))
+            assert (float(z), float(p)) == pytest.approx(expected)
+
+    def test_arrays_mix_zero_and_positive_sigma(self):
+        z, p = z_test(np.array([12.0, 10.0, 8.0, 12.0]), np.array([10.0] * 4), np.array([0.0, 0.0, 0.0, 2.0]))
+        assert list(z) == [math.inf, 0.0, -math.inf, 1.0]
+        assert not np.isnan(p).any()
+
+    def test_no_runtime_warning(self):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            z_test(np.array([12.0, 10.0, 8.0]), np.array([10.0] * 3), np.array([0.0] * 3))
+
+    def test_a_zero_sigma_no_longer_spoils_the_other_q_value(self):
+        import statsmodels.stats.multitest as sm
+
+        _, p = z_test(np.array([10.0, 12.0]), np.array([10.0, 10.0]), np.array([0.0, 0.0]))
+        q = sm.fdrcorrection(p)[1]
+        assert not np.isnan(q).any()
+        assert q[1] < 0.05  # the excess is still significant
+
+    def test_positive_sigma_is_not_affected(self):
+        z, p = z_test(np.array([14.0]), np.array([10.0]), np.array([2.0]))
+        assert z[0] == pytest.approx(2.0)
+        assert p[0] == pytest.approx(0.0455, abs=1e-4)
 
 
 # ─── enrichment_p_value ──────────────────────────────────────
