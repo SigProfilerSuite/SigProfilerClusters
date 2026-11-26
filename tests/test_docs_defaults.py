@@ -42,14 +42,14 @@ def test_the_table_was_parsed():
 def test_documented_default_matches_the_python_default(name):
     assert name in SIGNATURE, f"{name} is documented but analysis() has no such parameter"
     documented = _literal(DOCUMENTED[name])
-    if isinstance(SIGNATURE[name], int) and not isinstance(SIGNATURE[name], bool):
-        documented = int(documented)
+    if isinstance(SIGNATURE[name], (int, float)) and not isinstance(SIGNATURE[name], bool):
+        documented = type(SIGNATURE[name])(documented)
     assert SIGNATURE[name] == documented
 
 
 @pytest.mark.parametrize("name", sorted(set(DOCUMENTED) & set(CLI)))
 def test_documented_default_matches_the_command_line_default(name):
     documented = _literal(DOCUMENTED[name])
-    if isinstance(CLI[name], int) and not isinstance(CLI[name], bool):
-        documented = int(documented)
+    if isinstance(CLI[name], (int, float)) and not isinstance(CLI[name], bool):
+        documented = type(CLI[name])(documented)
     assert CLI[name] == documented

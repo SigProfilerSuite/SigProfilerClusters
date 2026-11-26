@@ -58,7 +58,13 @@ _DBS_NOTE = " (DBS is one of the outputs of SigProfilerClusters, not an input co
 
 
 def validate_arguments(
-    analysis, contexts, simContext, windowSize, variant_caller, interdistance="96"
+    analysis,
+    contexts,
+    simContext,
+    windowSize,
+    variant_caller,
+    interdistance="96",
+    vaf_max_difference=constants.VAF_MAX_DIFFERENCE,
 ):
     """Checks the arguments of analysis() that have a closed set of valid values, before any
     file is read, created or deleted. Raises InvalidParameterError naming the value and the valid
@@ -102,6 +108,15 @@ def validate_arguments(
         raise InvalidParameterError(
             "variant_caller must be one of %s, not %r"
             % (", ".join(map(repr, constants.VARIANT_CALLERS)), variant_caller)
+        )
+    if (
+        not isinstance(vaf_max_difference, numbers.Real)
+        or isinstance(vaf_max_difference, bool)
+        or not vaf_max_difference >= 0
+    ):
+        raise InvalidParameterError(
+            "vaf_max_difference must be a number greater than or equal to 0, not %r"
+            % (vaf_max_difference,)
         )
 
 
@@ -845,6 +860,7 @@ def _run_analysis(
     plotIMDfigure=True,
     plotRainfall=True,
     probability=False,
+    vaf_max_difference=constants.VAF_MAX_DIFFERENCE,
 ):
     """
     Organizes all of the data structures and calls all of the sub-functions. This is the main function called when running SigProfilerClusters.
@@ -882,6 +898,7 @@ def _run_analysis(
                      windowSize	->	the size of the window used for correcting the IMDs based upon mutational density within a given genomic range (integer; default=10000000)
               plotIMDfigure	->	optional parameter that generates IMD and mutational spectra plots for each sample (boolean; default=True).
                plotRainfall	->	optional parameter that generates rainfall plots for each sample using the subclassification of clustered events (boolean; default=True).
+         vaf_max_difference	->	the maximum difference between the VAFs of adjacent mutations of a clustered event (float >= 0; default=0.1). Ignored when includedCCFs=True (the CCF cutoff is used).
 
     Returns:
             None
@@ -910,7 +927,13 @@ def _run_analysis(
             "for the clustered analysis."
         )
     validate_arguments(
-        analysis, contexts, simContext, windowSize, variant_caller, interdistance
+        analysis,
+        contexts,
+        simContext,
+        windowSize,
+        variant_caller,
+        interdistance,
+        vaf_max_difference,
     )
     # From here on the contexts have their standard names (SBS96, ID83): they are part of the
     # names of the files that are written and read
@@ -1617,6 +1640,7 @@ def _run_analysis(
                     imds,
                     correction,
                     includedCCFs,
+                    vaf_max_difference=vaf_max_difference,
                 )
             elif includedCCFs:
                 classifyFunctions.pullCCF(project, ref_dir, correction)

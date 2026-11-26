@@ -1,6 +1,7 @@
 import argparse
 from typing import List
 from SigProfilerClusters import SigProfilerClusters
+from SigProfilerClusters import constants
 
 
 def str2bool(v):
@@ -61,6 +62,13 @@ def parse_arguments_clusters(args: List[str], description: str) -> argparse.Name
         default="AF",
         help="Only with --variant_caller custom: tag of the VAF in the FORMAT/sample columns (default: AF)",
     )
+    parser.add_argument(
+        "--vaf_max_difference",
+        type=float,
+        default=constants.VAF_MAX_DIFFERENCE,
+        help="Maximum difference between the VAFs of adjacent mutations of a clustered event "
+        "(default: %s)" % constants.VAF_MAX_DIFFERENCE,
+    )
     parser.add_argument("--includedVAFs", type=str2bool, nargs="?", const=True, default=True)
     parser.add_argument("--includedCCFs", type=str2bool, nargs="?", const=True, default=False)
     parser.add_argument("--windowSize", type=int, default=1000000)
@@ -108,4 +116,5 @@ class CliController:
             plotIMDfigure=parsed_args.plotIMDfigure,
             plotRainfall=parsed_args.plotRainfall,
             probability=parsed_args.probability,
+            vaf_max_difference=parsed_args.vaf_max_difference,
         )

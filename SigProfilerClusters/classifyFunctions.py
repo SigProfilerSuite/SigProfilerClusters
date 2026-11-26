@@ -619,6 +619,7 @@ def findClustersOfClusters(
     imds,
     correction=True,
     includedCCFs=False,
+    vaf_max_difference=constants.VAF_MAX_DIFFERENCE,
 ):
     """
     Subclassifies the clustered mutations into different categories including DBS, MBS, omikli, kataegis, and other. This is only performed
@@ -779,7 +780,7 @@ def findClustersOfClusters(
 
     # Hard-coded cutoffs, which can later be used as additional parameters to the tool.
     cutoff = constants.EVENT_GROUPING_DISTANCE  # Min distance required between adjacenet events
-    vaf_cut = constants.VAF_MAX_DIFFERENCE  # Max difference in VAFs of adjacent mutations
+    vaf_cut = vaf_max_difference  # Max difference in VAFs of adjacent mutations (default 0.1)
     if includedCCFs:
         vaf_cut = constants.CCF_MAX_DIFFERENCE  # Max difference in VAFs of adjacent mutations
 
