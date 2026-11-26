@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-26
+
+### Fixed
+
+- fix(plotting): set the y labels after the y ticks and give zero-height panels explicit limits
+
+- fix(hotspot): define z_test when the simulated standard deviation is zero
+
+- fix(classify): split events at a distance above the cutoff also with correction=True
+
 ## [1.3.0] - 2026-11-25
 
 ### Added
