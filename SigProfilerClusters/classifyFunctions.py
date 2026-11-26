@@ -1120,7 +1120,7 @@ def findClustersOfClusters(
                                         for x, y in zip(lines, lines[1:])
                                         if (
                                             int(y[7]) - int(x[7]) > imdsData[y[1]]
-                                            and (
+                                            and not (
                                                 len(regions[y[1]]) > 0
                                                 and regions[y[1]][
                                                     hotspot.catch(
@@ -1137,7 +1137,7 @@ def findClustersOfClusters(
                                                 < windowSize
                                                 and hotspot.cutoffCatch(
                                                     [int(y[-2]), y[1], y[5], y[7]],
-                                                    imds_corrected[y[1]],
+                                                    imds_corrected,
                                                     regions[y[1]],
                                                     hotspot.catch(
                                                         [".", ".", y[5], y[7]],
@@ -2228,7 +2228,7 @@ def findClustersOfClusters_noVAF(
                                         for x, y in zip(lines, lines[1:])
                                         if (
                                             int(y[7]) - int(x[7]) > imdsData[y[1]]
-                                            and (
+                                            and not (
                                                 len(regions[y[1]]) > 0
                                                 and regions[y[1]][
                                                     hotspot.catch(
@@ -2245,7 +2245,7 @@ def findClustersOfClusters_noVAF(
                                                 < windowSize
                                                 and hotspot.cutoffCatch(
                                                     [int(y[-2]), y[1], y[5], y[7]],
-                                                    imds_corrected[y[1]],
+                                                    imds_corrected,
                                                     regions[y[1]],
                                                     hotspot.catch(
                                                         [".", ".", y[5], y[7]],
@@ -2415,7 +2415,7 @@ def findClustersOfClusters_noVAF(
                         for x, y in zip(lines, lines[1:])
                         if (
                             int(y[7]) - int(x[7]) > imdsData[y[1]]
-                            and (
+                            and not (
                                 len(regions[y[1]]) > 0
                                 and regions[y[1]][
                                     hotspot.catch(
@@ -2429,7 +2429,7 @@ def findClustersOfClusters_noVAF(
                                 < windowSize
                                 and hotspot.cutoffCatch(
                                     [int(y[-2]), y[1], y[5], y[7]],
-                                    imds_corrected[y[1]],
+                                    imds_corrected,
                                     regions[y[1]],
                                     hotspot.catch(
                                         [".", ".", y[5], y[7]],
